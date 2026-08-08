@@ -1,0 +1,34 @@
+{
+  "languages": {
+    "Rust": {
+      "formatter": "language_server",
+      "code_actions_on_format": {},
+      "format_on_save": "on",
+      "tab_size": 4
+    }
+  },
+  "lsp": {
+    "rust-analyzer": {
+      "initialization_options": {
+        "cargo": {
+          "targetDir": true,
+          "extraEnv": {
+            "HELIX_DISABLE_AUTO_GRAMMAR_BUILD": "1"
+          }
+        },
+        "check": {
+          "command": "clippy",
+          "extraEnv": {
+            "HELIX_DISABLE_AUTO_GRAMMAR_BUILD": "1"
+          }
+        },
+        "files": {
+          "excludeDirs": ["target", "runtime", "book", ".direnv"]
+        },
+        "procMacro": {
+          "enable": true
+        }
+      }
+    }
+  }
+}

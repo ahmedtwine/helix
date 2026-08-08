@@ -93,6 +93,10 @@ impl Recommender {
         }
     }
 
+    fn pinned(&self, editor: &Editor) -> Vec<Cell> {
+        self.build(self.engine.pinned(&self.signals(editor)), 0)
+    }
+
     fn cells(&self, editor: &Editor) -> Vec<Cell> {
         let sections = self.engine.suggest(&self.signals(editor), self.sections);
 
@@ -106,6 +110,10 @@ impl Recommender {
             false => 0,
         };
 
+        self.build(sections, pad)
+    }
+
+    fn build(&self, sections: Vec<engine::Section>, pad: usize) -> Vec<Cell> {
         let mut cells = Vec::new();
 
         for section in sections {
@@ -133,10 +141,15 @@ impl Recommender {
     }
 }
 
-fn pack(cells: Vec<Cell>, width: usize, rows: usize) -> Vec<Vec<Cell>> {
+fn pack(cells: Vec<Cell>, width: usize, rows: usize, reserve: usize) -> Vec<Vec<Cell>> {
     if width == 0 || rows == 0 {
         return Vec::new();
     }
+
+    let limit = |row: usize| match row + 1 == rows {
+        true => width.saturating_sub(reserve),
+        false => width,
+    };
 
     let mut lines: Vec<Vec<Cell>> = Vec::new();
     let mut line: Vec<Cell> = Vec::new();
@@ -144,11 +157,11 @@ fn pack(cells: Vec<Cell>, width: usize, rows: usize) -> Vec<Vec<Cell>> {
 
     for cell in cells {
         let size = cell.width();
-        if size > width {
+        if size > limit(lines.len()) {
             continue;
         }
 
-        if used + size > width {
+        if used + size > limit(lines.len()) {
             if lines.len() + 1 == rows {
                 break;
             }
@@ -169,10 +182,12 @@ fn pack(cells: Vec<Cell>, width: usize, rows: usize) -> Vec<Vec<Cell>> {
 
 impl Source for Recommender {
     fn size(&self, editor: &Editor, available: (u16, u16)) -> (u16, u16) {
+        let reserve: usize = self.pinned(editor).iter().map(Cell::width).sum();
         let lines = pack(
             self.cells(editor),
             available.0 as usize,
             self.rows.min(available.1.max(1) as usize),
+            reserve,
         );
 
         (available.0, lines.len().max(1) as u16)
@@ -188,10 +203,15 @@ impl Source for Recommender {
     }
 
     fn render(&mut self, area: Rect, surface: &mut Surface, cx: &mut Context) {
+        let pinned = self.pinned(cx.editor);
+        let reserve: usize = pinned.iter().map(Cell::width).sum();
+
+        let rows = self.rows.min(area.height.max(1) as usize);
         let lines = pack(
             self.cells(cx.editor),
             area.width as usize,
-            self.rows.min(area.height.max(1) as usize),
+            rows,
+            reserve,
         );
 
         let theme = &cx.editor.theme;
@@ -201,23 +221,31 @@ impl Source for Recommender {
         let keys = foreground(theme, "keyword");
         let label = foreground(theme, "comment");
 
-        for (index, line) in lines.into_iter().enumerate() {
-            let y = area.y + index as u16;
-            if y >= area.bottom() {
-                break;
-            }
-
-            let mut x = area.x;
-            for cell in line {
-                for (text, paint) in cell.parts {
-                    let style = match paint {
+        let paint = |surface: &mut Surface, mut x: u16, y: u16, cells: &[Cell]| {
+            for cell in cells {
+                for (text, kind) in &cell.parts {
+                    let style = match kind {
                         Paint::Chip => chip,
                         Paint::Keys => keys,
                         Paint::Label => label,
                     };
-                    x = write(surface, x, y, area, &text, style);
+                    x = write(surface, x, y, area, text, style);
                 }
             }
+        };
+
+        for (index, line) in lines.iter().enumerate() {
+            let y = area.y + index as u16;
+            if y >= area.bottom() {
+                break;
+            }
+            paint(surface, area.x, y, line);
+        }
+
+        if !pinned.is_empty() {
+            let y = area.y + (rows.min(lines.len().max(1)) as u16).saturating_sub(1);
+            let x = area.right().saturating_sub(reserve as u16).max(area.x);
+            paint(surface, x, y, &pinned);
         }
     }
 }
@@ -288,14 +316,14 @@ mod tests {
 
     #[test]
     fn everything_on_one_row_when_it_fits() {
-        let lines = pack(cells(3), 200, 2);
+        let lines = pack(cells(3), 200, 2, 0);
         assert_eq!(lines.len(), 1);
         assert_eq!(lines[0].len(), 3);
     }
 
     #[test]
     fn spillover_wraps_onto_a_second_row() {
-        let lines = pack(cells(8), 40, 2);
+        let lines = pack(cells(8), 40, 2, 0);
         assert_eq!(lines.len(), 2);
         assert!(lines[0].len() < 8);
     }
@@ -303,13 +331,13 @@ mod tests {
     #[test]
     fn no_row_ever_exceeds_the_width() {
         let width = 37;
-        let lines = pack(cells(40), width, 4);
+        let lines = pack(cells(40), width, 4, 0);
         assert!(widest(&lines) <= width);
     }
 
     #[test]
     fn a_key_is_never_split_from_its_label() {
-        let lines = pack(cells(40), 37, 4);
+        let lines = pack(cells(40), 37, 4, 0);
         for line in &lines {
             for cell in line {
                 assert_eq!(cell.parts.len(), 2);
@@ -319,13 +347,13 @@ mod tests {
 
     #[test]
     fn the_row_budget_is_never_exceeded() {
-        let lines = pack(cells(200), 30, 2);
+        let lines = pack(cells(200), 30, 2, 0);
         assert_eq!(lines.len(), 2);
     }
 
     #[test]
     fn a_single_row_budget_truncates_instead_of_wrapping() {
-        let lines = pack(cells(200), 30, 1);
+        let lines = pack(cells(200), 30, 1, 0);
         assert_eq!(lines.len(), 1);
     }
 
@@ -334,13 +362,41 @@ mod tests {
         let mut mixed = vec![cell("this-one-is-very-wide-indeed")];
         mixed.extend(cells(2));
 
-        let lines = pack(mixed, 20, 2);
+        let lines = pack(mixed, 20, 2, 0);
         assert!(widest(&lines) <= 20);
         assert!(!lines.is_empty());
     }
 
     #[test]
+    fn the_reserved_area_is_kept_clear_on_the_last_row() {
+        let reserve = 30;
+        let width = 60;
+        let lines = pack(cells(40), width, 2, reserve);
+
+        let last: usize = lines.last().unwrap().iter().map(Cell::width).sum();
+        assert!(
+            last <= width - reserve,
+            "last row used {last} of the {} it may use",
+            width - reserve
+        );
+    }
+
+    #[test]
+    fn earlier_rows_still_use_the_full_width() {
+        let lines = pack(cells(40), 60, 3, 30);
+        let first: usize = lines[0].iter().map(Cell::width).sum();
+        assert!(first > 30);
+    }
+
+    #[test]
+    fn a_single_row_panel_still_honours_the_reservation() {
+        let lines = pack(cells(40), 60, 1, 30);
+        let only: usize = lines[0].iter().map(Cell::width).sum();
+        assert!(only <= 30);
+    }
+
+    #[test]
     fn zero_width_produces_nothing_rather_than_looping() {
-        assert!(pack(cells(4), 0, 2).is_empty());
+        assert!(pack(cells(4), 0, 2, 0).is_empty());
     }
 }

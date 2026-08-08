@@ -151,8 +151,6 @@ impl Panel {
             return;
         }
 
-        self.area = area;
-
         let style = cx.editor.theme.get(&self.config.style);
         surface.clear_with(area, style);
 
@@ -173,6 +171,7 @@ impl Panel {
             vertical: self.config.padding.1,
         });
 
+        self.area = inner;
         self.source.render(inner, surface, cx);
     }
 }

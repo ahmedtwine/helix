@@ -200,7 +200,25 @@ same kind, not across unrelated groups.
 | `padding` | `[h, v]` | Inset applied after the border |
 | `style` | theme key | Background, e.g. `ui.statusline` |
 | `order` | integer | Paint order; higher paints later |
-| `toggle` | key, e.g. `"C-e"` | Shows and hides the panel. A panel with a toggle is built even when `enabled = false` |
+| `toggle` | single key, e.g. `"A-b"` | Optional direct key to show and hide the panel |
+| `dismissable` | `true` `false` | Escape closes the panel when it is showing |
+
+Every configured panel is built at startup regardless of `enabled`; `enabled`
+only sets the starting visibility. That is what lets `panel::toggle("sidebar")`
+reach a panel that ships hidden.
+
+### Opening a panel from the keymap
+
+`toggle` takes a **single** key, which is a real limit: studio's `input` hook runs
+*before* Helix's keymap, so a multi-key sequence like `space e` cannot be matched
+there without swallowing `space` and breaking every other space binding.
+
+The way round it is to let the keymap do its job and interpret the *command*.
+`space e` stays bound to `file_explorer`; studio's `open` hook receives
+`UiRequest::FileExplorer` and returns `Opened::Handled`, which toggles the sidebar
+and pushes no layer. This is why `open` returns `Opened` rather than
+`Option<Box<dyn Component>>` — `None` means "fall back to Helix", and there was
+previously no way to say "handled, show nothing".
 
 `Fit` sizes against the **viewport**, `Fill` and percentages against the
 **anchor**. That distinction matters: `anchor = "cursor"` is a 1×1 rect, so
@@ -232,12 +250,14 @@ stock Helix behaviour is unchanged when nothing is installed.
 | `render_top(area, surface, cx)` | `compositor.rs`, `Compositor::render` | Draw over every layer, every frame. Drives the whole panel system |
 | `render_bufferline(editor, area, surface) -> bool` | `ui/editor.rs`, `EditorView::render` | Own the tab strip; return `false` to fall back to Helix's |
 | `input(event, cx) -> bool` | `ui/editor.rs`, `EditorView::handle_event` | First refusal on every key and mouse event, with a full `Context` |
-| `open(request, editor)` | `commands.rs`, `application.rs` | Build a component instead of Helix's |
+| `open(request, editor) -> Option<Opened>` | `commands.rs`, `application.rs` | `Layer(c)` pushes `c`, `Handled` pushes nothing, `None` falls back to Helix |
 
 `UiRequest` variants: `FilePicker`, `FileExplorer`, `StartupDirectory`.
 
 Returning `None` from `open` falls back to Helix's component, so surfaces can be
-taken over one at a time.
+taken over one at a time. `Opened::Handled` is the third case: studio dealt with
+the request and no layer should be pushed, which is how a keymapped command can
+toggle a panel instead of opening an overlay.
 
 ### Event streams, which cost no hooks at all
 
@@ -275,7 +295,7 @@ Rules that are not obvious and will crash or silently no-op if broken:
 | Config | Ships `config/default.toml` as built-in defaults, merged under user config | `config.rs` |
 | Panels | One component type, config-driven geometry, pluggable content | `panel/` |
 | Tips footer | Predicts the next commands from state and history | `panel/recommender/` |
-| Sidebar | 25% drawer with explorer and git-changes modes | `panel/sidebar/` |
+| Sidebar | `space e` toggles a 25% drawer; clickable Explorer / Changes tabs; remembers its last mode | `panel/sidebar/` |
 | Diff | Side-by-side hunks against the VCS base, click to stage | `panel/diff/` |
 | Hover | Rest on a symbol and the LSP signature plus cursor diagnostics float above it | `panel/hover/` |
 | Keymap | `space f` finds files, `space e` opens the explorer, rest trimmed | `config/default.toml` |
@@ -355,6 +375,19 @@ width, so items line up in columns across rows. `height = "fit"` then asks the
 source how many rows it actually needs, and the panel shrinks back to one row
 when the content fits.
 
+**The reserved area.** A group marked `pinned = true` never enters the ranking;
+it is rendered right-aligned on the panel's last row, and `pack` is told to keep
+that many columns free on that row. So the escape hatches — `␣a` code actions,
+`␣?` the command palette, `m` text objects — hold a fixed spot no matter what the
+prediction is doing. A pending prefix menu hides them too, so the takeover stays
+clean.
+
+**A panel's hit-test rect is its inner rect.** `Panel` stores the area *after*
+the border and padding are removed, because that is the rect the `Source` painted
+into. Storing the outer rect makes every mouse coordinate off by the border
+width, which is why the sidebar's Explorer/Changes tabs did not respond to
+clicks.
+
 **Tab hover feeds the recommender.** `chrome` reports its hovered tab through
 `StudioEvent::Hover`, which flips the `focus:tab` gate and makes the panel show
 buffer and split bindings for the tab under the mouse.
@@ -399,7 +432,7 @@ and those unwraps panic. Hence the two dedicated hooks.
 | `panel/layout.rs` | `Placement` geometry: anchor, side, align, extent, offset |
 | `panel/recommender/engine.rs` | Catalog, signals, scoring, history, learned edges |
 | `panel/recommender/mod.rs` | Tips view: reads editor state, paints the row |
-| `panel/sidebar/modes.rs` | Explorer and git modes, background changed-file scan |
+| `panel/sidebar/modes.rs` | Explorer and git modes, mode persistence, background changed-file scan |
 | `panel/sidebar/mod.rs` | Drawer view: rows, scrolling, mouse |
 | `panel/diff/engine.rs` | Pairs hunks into aligned left/right rows; stage and unstage |
 | `panel/diff/mod.rs` | Two-column view with gutters, markers, and gap elision |
@@ -456,7 +489,7 @@ panel system, so new panels cost zero upstream changes.
 
 ## Tests
 
-`cargo test -p helix-studio` — 80 tests:
+`cargo test -p helix-studio` — 86 tests:
 
 - config merge layers, for both the editor config and the panel config
 - tree splice, drain, and reveal invariants, including the exact depth sequence
@@ -472,7 +505,7 @@ panel system, so new panels cost zero upstream changes.
 
 Not covered by unit tests, because they need a live terminal: panel painting,
 prefix-menu sync, session round-trip, and the explorer's expand/collapse rebuild.
-Those run under a pty harness of 19 scenarios that resizes the terminal to force
+Those run under a pty harness of 22 scenarios that resizes the terminal to force
 a full repaint, then greps the reconstructed screen. Without the resize,
 `helix-tui` only rewrites changed cells, so strings split across frames and the
 grep produces false misses.

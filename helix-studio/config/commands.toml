@@ -1,4 +1,14 @@
 [[group]]
+id = "menus"
+label = "Any time"
+pinned = true
+entries = [
+  { keys = "␣a", label = "code actions", weight = 24, cmd = "code_action" },
+  { keys = "␣?", label = "all commands", weight = 22, cmd = "command_palette" },
+  { keys = "m", label = "select around", weight = 20, cmd = "" },
+]
+
+[[group]]
 id = "goto"
 label = "Goto"
 base = 60

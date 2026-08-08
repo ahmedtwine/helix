@@ -104,6 +104,8 @@ pub struct Group {
     #[serde(default)]
     pub base: u32,
     #[serde(default)]
+    pub pinned: bool,
+    #[serde(default)]
     pub when: Vec<String>,
     #[serde(default)]
     pub after: Vec<String>,
@@ -210,6 +212,7 @@ impl Engine {
             .catalog
             .group
             .iter()
+            .filter(|group| !group.pinned)
             .filter(|group| declares_pending(group) == pending)
             .filter(|group| signals.passes(&group.when))
             .map(|group| (self.score_group(group), group))
@@ -221,6 +224,20 @@ impl Engine {
             .into_iter()
             .take(sections)
             .filter_map(|(_, group)| self.section(group, signals))
+            .collect()
+    }
+
+    pub fn pinned(&self, signals: &Signals) -> Vec<Section> {
+        if signals.pending.is_some() {
+            return Vec::new();
+        }
+
+        self.catalog
+            .group
+            .iter()
+            .filter(|group| group.pinned)
+            .filter(|group| signals.passes(&group.when))
+            .filter_map(|group| self.section(group, signals))
             .collect()
     }
 
@@ -672,6 +689,43 @@ mod tests {
 
         assert!(!sections.is_empty());
         assert!(labels(&sections).contains(&"Move"));
+    }
+
+    #[test]
+    fn pinned_groups_are_always_offered_whatever_the_state() {
+        let engine = engine();
+
+        for signals in [
+            Signals::default(),
+            selected(true, true),
+            Signals {
+                mode: Mode::Insert,
+                ..Signals::default()
+            },
+            Signals {
+                lsp: true,
+                modified: true,
+                ..Signals::default()
+            },
+        ] {
+            let pinned = engine.pinned(&signals);
+            assert_eq!(labels(&pinned), vec!["Any time"]);
+            assert!(pinned[0].items.iter().any(|item| item.keys == "␣a"));
+            assert!(pinned[0].items.iter().any(|item| item.keys == "␣?"));
+        }
+    }
+
+    #[test]
+    fn pinned_groups_never_compete_in_the_ranked_list() {
+        let engine = engine();
+        let ranked = engine.suggest(&Signals::default(), 99);
+
+        assert!(!labels(&ranked).contains(&"Any time"));
+    }
+
+    #[test]
+    fn a_prefix_menu_takes_over_the_reserved_area_too() {
+        assert!(engine().pinned(&pending("goto")).is_empty());
     }
 
     #[test]

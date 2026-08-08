@@ -1452,6 +1452,10 @@ impl Component for EditorView {
         event: &Event,
         context: &mut crate::compositor::Context,
     ) -> EventResult {
+        if crate::ui_hooks::input(event, context) {
+            return EventResult::Consumed(None);
+        }
+
         let mut cx = commands::Context {
             editor: context.editor,
             count: None,
@@ -1638,7 +1642,10 @@ impl Component for EditorView {
         cx.editor.resize(editor_area);
 
         if use_bufferline {
-            Self::render_bufferline(cx.editor, area.with_height(1), surface);
+            let bufferline_area = area.with_height(1);
+            if !crate::ui_hooks::render_bufferline(cx.editor, bufferline_area, surface) {
+                Self::render_bufferline(cx.editor, bufferline_area, surface);
+            }
         }
 
         for (view, is_focused) in cx.editor.tree.views() {

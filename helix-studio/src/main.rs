@@ -1,5 +1,4 @@
 use anyhow::Result;
-use helix_term::config::Config;
 
 fn main() -> Result<()> {
     let exit_code = main_impl()?;
@@ -8,5 +7,6 @@ fn main() -> Result<()> {
 
 #[tokio::main]
 async fn main_impl() -> Result<i32> {
-    helix_term::entry::run(Config::load_default).await
+    helix_studio::install();
+    helix_term::entry::run(helix_studio::config::load).await
 }

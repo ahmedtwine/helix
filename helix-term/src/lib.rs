@@ -9,9 +9,11 @@ pub mod config;
 pub mod events;
 pub mod health;
 pub mod job;
+pub mod entry;
 pub mod keymap;
 pub mod logging;
 pub mod ui;
+pub mod ui_hooks;
 
 #[cfg(not(windows))]
 use std::env::var_os;
@@ -75,7 +77,7 @@ pub(crate) fn is_binary(buffer: &[u8]) -> bool {
 }
 
 /// Function used for filtering dir entries in the various file pickers.
-fn filter_picker_entry(entry: &DirEntry, root: &Path, dedup_symlinks: bool) -> bool {
+pub fn filter_picker_entry(entry: &DirEntry, root: &Path, dedup_symlinks: bool) -> bool {
     // We always want to ignore popular VCS directories, otherwise if
     // `ignore` is turned off, we end up with a lot of noise
     // in our picker.

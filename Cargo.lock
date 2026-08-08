@@ -1669,6 +1669,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "helix-studio"
+version = "25.7.1"
+dependencies = [
+ "anyhow",
+ "helix-core",
+ "helix-event",
+ "helix-loader",
+ "helix-lsp",
+ "helix-stdx",
+ "helix-term",
+ "helix-tui",
+ "helix-vcs",
+ "helix-view",
+ "ignore",
+ "serde",
+ "tempfile",
+ "tokio",
+ "toml",
+]
+
+[[package]]
 name = "helix-term"
 version = "25.7.1"
 dependencies = [

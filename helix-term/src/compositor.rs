@@ -102,7 +102,8 @@ impl Compositor {
     }
 
     /// Add a layer to be rendered in front of all existing layers.
-    pub fn push(&mut self, mut layer: Box<dyn Component>) {
+    pub fn push(&mut self, layer: Box<dyn Component>) {
+        let mut layer = crate::ui_hooks::mount(layer);
         // immediately clear last_picker field to avoid excessive memory
         // consumption for picker with many items
         if layer.id() == Some(picker::ID) {
@@ -184,6 +185,9 @@ impl Compositor {
     pub fn render(&mut self, area: Rect, surface: &mut Surface, cx: &mut Context) {
         for layer in &mut self.layers {
             layer.render(area, surface, cx);
+        }
+        if let Some(hooks) = crate::ui_hooks::get() {
+            hooks.render_top(area, surface, cx);
         }
     }
 

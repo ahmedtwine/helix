@@ -1,0 +1,63 @@
+theme = "ayu_dark"
+
+[editor]
+line-number = "relative"
+cursorline = true
+mouse = true
+true-color = true
+bufferline = "always"
+color-modes = true
+popup-border = "all"
+end-of-line-diagnostics = "hint"
+gutters = ["diff", "diagnostics", "line-numbers", "spacer"]
+
+[editor.auto-save]
+focus-lost = true
+after-delay.enable = true
+
+[editor.soft-wrap]
+enable = true
+
+[editor.lsp]
+display-messages = true
+display-inlay-hints = false
+display-signature-help-docs = true
+
+[editor.cursor-shape]
+insert = "bar"
+normal = "block"
+select = "underline"
+
+[editor.statusline]
+left = ["mode", "spinner", "version-control", "file-name", "read-only-indicator", "file-modification-indicator"]
+center = ["diagnostics", "workspace-diagnostics"]
+right = ["selections", "position", "file-encoding", "file-line-ending", "file-type"]
+
+[editor.indent-guides]
+render = true
+character = "│"
+skip-levels = 0
+
+[editor.inline-diagnostics]
+cursor-line = "warning"
+other-lines = "disable"
+
+[keys.normal.space]
+f = "file_picker"
+e = "file_explorer"
+F = "no_op"
+"." = "no_op"
+b = "no_op"
+j = "no_op"
+s = "no_op"
+S = "no_op"
+d = "no_op"
+D = "no_op"
+g = "no_op"
+"'" = "no_op"
+G = "no_op"
+Y = "no_op"
+P = "no_op"
+k = "no_op"
+h = "no_op"
+C = "no_op"

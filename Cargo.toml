@@ -14,11 +14,12 @@ members = [
   "helix-vcs",
   "helix-parsec",
   "helix-stdx",
+  "helix-studio",
   "xtask",
 ]
 
 default-members = [
-  "helix-term"
+  "helix-studio"
 ]
 
 [profile.release]

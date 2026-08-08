@@ -67,6 +67,7 @@ use crate::{
     filter_picker_entry,
     job::Callback,
     ui::{self, overlay::overlaid, Picker, PickerColumn, Popup, Prompt, PromptEvent},
+    ui_hooks,
 };
 
 use crate::job::{self, Jobs};
@@ -3167,14 +3168,41 @@ fn append_mode(cx: &mut Context) {
     doc.set_selection(view.id, selection);
 }
 
+fn open_file_picker(cx: &mut Context, root: PathBuf) {
+    if let Some(component) =
+        ui_hooks::open(ui_hooks::UiRequest::FilePicker { root: root.clone() }, cx.editor)
+    {
+        if let ui_hooks::Opened::Layer(layer) = component {
+            cx.push_layer(layer);
+        }
+        return;
+    }
+    let picker = ui::file_picker(cx.editor, root);
+    cx.push_layer(Box::new(overlaid(picker)));
+}
+
+fn open_file_explorer(cx: &mut Context, root: PathBuf) {
+    if let Some(component) = ui_hooks::open(
+        ui_hooks::UiRequest::FileExplorer { root: root.clone() },
+        cx.editor,
+    ) {
+        if let ui_hooks::Opened::Layer(layer) = component {
+            cx.push_layer(layer);
+        }
+        return;
+    }
+    if let Ok(picker) = ui::file_explorer(root, cx.editor) {
+        cx.push_layer(Box::new(overlaid(picker)));
+    }
+}
+
 fn file_picker(cx: &mut Context) {
     let root = find_workspace().0;
     if !root.exists() {
         cx.editor.set_error("Workspace directory does not exist");
         return;
     }
-    let picker = ui::file_picker(cx.editor, root);
-    cx.push_layer(Box::new(overlaid(picker)));
+    open_file_picker(cx, root);
 }
 
 fn file_picker_in_current_buffer_directory(cx: &mut Context) {
@@ -3199,8 +3227,7 @@ fn file_picker_in_current_buffer_directory(cx: &mut Context) {
         }
     };
 
-    let picker = ui::file_picker(cx.editor, path);
-    cx.push_layer(Box::new(overlaid(picker)));
+    open_file_picker(cx, path);
 }
 
 fn file_picker_in_current_directory(cx: &mut Context) {
@@ -3210,8 +3237,7 @@ fn file_picker_in_current_directory(cx: &mut Context) {
             .set_error("Current working directory does not exist");
         return;
     }
-    let picker = ui::file_picker(cx.editor, cwd);
-    cx.push_layer(Box::new(overlaid(picker)));
+    open_file_picker(cx, cwd);
 }
 
 fn file_explorer(cx: &mut Context) {
@@ -3221,9 +3247,7 @@ fn file_explorer(cx: &mut Context) {
         return;
     }
 
-    if let Ok(picker) = ui::file_explorer(root, cx.editor) {
-        cx.push_layer(Box::new(overlaid(picker)));
-    }
+    open_file_explorer(cx, root);
 }
 
 fn file_explorer_in_current_buffer_directory(cx: &mut Context) {
@@ -3248,9 +3272,7 @@ fn file_explorer_in_current_buffer_directory(cx: &mut Context) {
         }
     };
 
-    if let Ok(picker) = ui::file_explorer(path, cx.editor) {
-        cx.push_layer(Box::new(overlaid(picker)));
-    }
+    open_file_explorer(cx, path);
 }
 
 fn file_explorer_in_current_directory(cx: &mut Context) {
@@ -3261,9 +3283,7 @@ fn file_explorer_in_current_directory(cx: &mut Context) {
         return;
     }
 
-    if let Ok(picker) = ui::file_explorer(cwd, cx.editor) {
-        cx.push_layer(Box::new(overlaid(picker)));
-    }
+    open_file_explorer(cx, cwd);
 }
 
 struct PathStyleConfig {

@@ -141,6 +141,14 @@ impl Application {
 
         let jobs = Jobs::new();
 
+        let startup_cx = crate::ui_hooks::StartupContext {
+            root: helix_stdx::env::current_working_dir(),
+            opening_directory: args.files.first().is_some_and(|(path, _)| path.is_dir()),
+            file_count: args.files.len(),
+            tutor: args.load_tutor,
+        };
+        let session_restored = crate::ui_hooks::claims_startup(&startup_cx);
+
         if args.load_tutor {
             let path = helix_loader::runtime_file(Path::new("tutor"));
             editor.open(&path, Action::VerticalSplit)?;
@@ -151,8 +159,21 @@ impl Application {
 
             // If the first file is a directory, skip it and open a picker
             if let Some((first, _)) = files_it.next_if(|(p, _)| p.is_dir()) {
-                let picker = ui::file_picker(&editor, first);
-                compositor.push(Box::new(overlaid(picker)));
+                if !session_restored {
+                    match crate::ui_hooks::open(
+                        crate::ui_hooks::UiRequest::StartupDirectory {
+                            root: first.clone(),
+                        },
+                        &mut editor,
+                    ) {
+                        Some(crate::ui_hooks::Opened::Layer(layer)) => compositor.push(layer),
+                        Some(crate::ui_hooks::Opened::Handled) => {}
+                        None => {
+                            let picker = ui::file_picker(&editor, first);
+                            compositor.push(Box::new(overlaid(picker)));
+                        }
+                    }
+                }
             }
 
             // If there are any more files specified, open them
@@ -231,6 +252,8 @@ impl Application {
                 .new_file_from_stdin(Action::VerticalSplit)
                 .unwrap_or_else(|_| editor.new_file(Action::VerticalSplit));
         }
+
+        crate::ui_hooks::startup(&mut editor, &startup_cx);
 
         #[cfg(windows)]
         let signals = futures_util::stream::empty();

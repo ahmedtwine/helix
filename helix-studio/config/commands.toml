@@ -1,0 +1,325 @@
+[[group]]
+id = "goto"
+label = "Goto"
+base = 60
+when = ["pending:goto"]
+entries = [
+  { keys = "d", label = "definition", cmd = "goto_definition" },
+  { keys = "r", label = "references", cmd = "goto_reference" },
+  { keys = "g", label = "file start", cmd = "goto_file_start" },
+  { keys = "e", label = "file end", cmd = "goto_last_line" },
+  { keys = "h", label = "line start", cmd = "goto_line_start" },
+  { keys = "l", label = "line end", cmd = "goto_line_end" },
+  { keys = "n", label = "next buffer", cmd = "goto_next_buffer" },
+  { keys = "p", label = "prev buffer", cmd = "goto_previous_buffer" },
+  { keys = "a", label = "last file", cmd = "goto_last_accessed_file" },
+]
+
+[[group]]
+id = "space"
+label = "Space"
+base = 60
+when = ["pending:space"]
+entries = [
+  { keys = "f", label = "find file", cmd = "file_picker" },
+  { keys = "e", label = "file explorer", cmd = "file_explorer" },
+  { keys = "y", label = "copy to clipboard", cmd = "yank_to_clipboard" },
+  { keys = "p", label = "paste clipboard", cmd = "paste_clipboard_after" },
+  { keys = "/", label = "search workspace", cmd = "global_search" },
+  { keys = "a", label = "code actions", cmd = "code_action" },
+  { keys = "r", label = "rename", cmd = "rename_symbol" },
+  { keys = "c", label = "toggle comment", cmd = "toggle_comments" },
+  { keys = "R", label = "replace with clipboard", cmd = "replace_selections_with_clipboard" },
+  { keys = "?", label = "command palette", cmd = "command_palette" },
+]
+
+[[group]]
+id = "match"
+label = "Match"
+base = 60
+when = ["pending:match"]
+entries = [
+  { keys = "iw", label = "inside word", cmd = "select_textobject_inner" },
+  { keys = "if", label = "inside function", cmd = "select_textobject_inner" },
+  { keys = "i(", label = "inside brackets", cmd = "select_textobject_inner" },
+  { keys = "i{", label = "inside block", cmd = "select_textobject_inner" },
+  { keys = "i\"", label = "inside quotes", cmd = "select_textobject_inner" },
+  { keys = "ap", label = "around paragraph", cmd = "select_textobject_around" },
+  { keys = "ac", label = "around class", cmd = "select_textobject_around" },
+  { keys = "m", label = "matching bracket", cmd = "match_brackets" },
+]
+
+[[group]]
+id = "window"
+label = "Window"
+base = 60
+when = ["pending:window"]
+entries = [
+  { keys = "v", label = "vertical split", cmd = "vsplit" },
+  { keys = "s", label = "horizontal split", cmd = "hsplit" },
+  { keys = "w", label = "next split", cmd = "rotate_view" },
+  { keys = "q", label = "close split", cmd = "wclose" },
+  { keys = "o", label = "only this split", cmd = "wonly" },
+  { keys = "h", label = "split left", cmd = "jump_view_left" },
+  { keys = "l", label = "split right", cmd = "jump_view_right" },
+]
+
+[[group]]
+id = "view"
+label = "View"
+base = 60
+when = ["pending:view"]
+entries = [
+  { keys = "z", label = "centre cursor", cmd = "align_view_center" },
+  { keys = "t", label = "cursor to top", cmd = "align_view_top" },
+  { keys = "b", label = "cursor to bottom", cmd = "align_view_bottom" },
+  { keys = "j", label = "scroll down", cmd = "scroll_down" },
+  { keys = "k", label = "scroll up", cmd = "scroll_up" },
+]
+
+[[group]]
+id = "tab"
+label = "Tab"
+base = 40
+when = ["focus:tab"]
+entries = [
+  { keys = "gn", label = "next buffer", weight = 24, cmd = "goto_next_buffer", repeat = true },
+  { keys = "gp", label = "prev buffer", weight = 22, cmd = "goto_previous_buffer", repeat = true },
+  { keys = "C-w v", label = "vertical split", weight = 18, cmd = "vsplit" },
+  { keys = "C-w s", label = "horizontal split", weight = 16, cmd = "hsplit" },
+  { keys = ":bc", label = "close buffer", weight = 12, cmd = "buffer-close" },
+]
+
+[[group]]
+id = "picker"
+label = "Picker"
+base = 34
+when = ["focus:picker"]
+entries = [
+  { keys = "C-v", label = "open in vsplit", weight = 24, cmd = "" },
+  { keys = "C-s", label = "open in hsplit", weight = 18, cmd = "" },
+  { keys = "C-t", label = "toggle preview", weight = 14, cmd = "" },
+  { keys = "Enter", label = "open", weight = 22, cmd = "" },
+  { keys = "Esc", label = "dismiss", weight = 12, cmd = "" },
+]
+
+[[group]]
+id = "insert"
+label = "Insert"
+base = 30
+when = ["insert"]
+entries = [
+  { keys = "Esc", label = "back to normal", weight = 24, cmd = "normal_mode" },
+  { keys = "C-w", label = "delete word back", weight = 20, cmd = "delete_word_backward" },
+  { keys = "C-u", label = "delete to line start", weight = 16, cmd = "kill_to_line_start" },
+  { keys = "C-x", label = "completion", weight = 14, cmd = "completion" },
+]
+
+[[group]]
+id = "select"
+label = "Select"
+base = 28
+when = ["select"]
+entries = [
+  { keys = "w", label = "extend word", weight = 24, cmd = "extend_next_word_start" },
+  { keys = "x", label = "extend line", weight = 22, cmd = "extend_line_below" },
+  { keys = "␣y", label = "copy to clipboard", weight = 20, cmd = "yank_to_clipboard" },
+  { keys = "d", label = "delete", weight = 22, cmd = "delete_selection" },
+  { keys = "c", label = "change", weight = 21, cmd = "change_selection" },
+  { keys = "Esc", label = "back to normal", weight = 24, cmd = "normal_mode" },
+]
+
+[[group]]
+id = "extend"
+label = "Extend"
+base = 34
+when = ["selection"]
+after = ["extend_line_below", "select_textobject_inner", "select_textobject_around", "select_mode", "select_regex", "expand_selection", "extend_next_word_start"]
+entries = [
+  { keys = "x", label = "add next line", weight = 24, cmd = "extend_line_below", repeat = true, after = ["extend_line_below"] },
+  { keys = "A-o", label = "grow to parent", weight = 20, cmd = "expand_selection", repeat = true, after = ["select_textobject_inner", "expand_selection"] },
+  { keys = "X", label = "snap to whole lines", weight = 18, cmd = "extend_to_line_bounds", when = ["!linewise"] },
+  { keys = "v", label = "keep extending", weight = 16, cmd = "select_mode" },
+  { keys = "C", label = "cursor on next line", weight = 15, cmd = "copy_selection_on_next_line", repeat = true, when = ["linewise"] },
+  { keys = "A-i", label = "shrink to child", weight = 13, cmd = "shrink_selection", repeat = true, when = ["multiline"] },
+  { keys = "s", label = "split into cursors", weight = 12, cmd = "select_regex", when = ["multiline"] },
+  { keys = "A-n", label = "next sibling", weight = 11, cmd = "select_next_sibling", repeat = true, when = ["!linewise"] },
+  { keys = ";", label = "back to one cursor", weight = 10, cmd = "collapse_selection" },
+]
+
+[[group]]
+id = "clipboard"
+label = "Selection"
+base = 32
+when = ["selection"]
+after = ["yank", "select_mode", "extend_line_below", "select_regex", "extend_next_word_start"]
+entries = [
+  { keys = "␣y", label = "copy to system clipboard", weight = 24, cmd = "yank_to_clipboard", after = ["yank", "select_mode", "extend_line_below"] },
+  { keys = "d", label = "cut", weight = 18, cmd = "delete_selection" },
+  { keys = "c", label = "replace", weight = 17, cmd = "change_selection" },
+  { keys = "␣p", label = "paste from clipboard", weight = 16, cmd = "paste_clipboard_after" },
+  { keys = "y", label = "yank to register", weight = 14, cmd = "yank" },
+  { keys = "␣R", label = "replace with clipboard", weight = 12, cmd = "replace_selections_with_clipboard" },
+  { keys = ";", label = "drop selection", weight = 10, cmd = "collapse_selection" },
+]
+
+[[group]]
+id = "cursors"
+label = "Cursors"
+base = 26
+when = ["normal", "multi-cursor"]
+after = ["select_regex", "copy_selection_on_next_line", "copy_selection_on_prev_line"]
+entries = [
+  { keys = "C", label = "cursor below", weight = 24, cmd = "copy_selection_on_next_line" },
+  { keys = "A-C", label = "cursor above", weight = 20, cmd = "copy_selection_on_prev_line" },
+  { keys = "&", label = "align columns", weight = 16, cmd = "align_selections" },
+  { keys = ",", label = "keep primary", weight = 18, cmd = "keep_primary_selection" },
+  { keys = ";", label = "collapse", weight = 14, cmd = "collapse_selection" },
+  { keys = "c", label = "change all", weight = 22, cmd = "change_selection" },
+]
+
+[[group]]
+id = "search"
+label = "Search"
+base = 12
+when = ["normal"]
+after = ["search", "search_next", "search_prev", "search_selection", "select_regex"]
+entries = [
+  { keys = "n", label = "next match", weight = 24, cmd = "search_next", repeat = true, after = ["search", "search_selection"] },
+  { keys = "/", label = "search", weight = 20, cmd = "search" },
+  { keys = "N", label = "prev match", weight = 18, cmd = "search_prev", repeat = true, after = ["search", "search_selection"] },
+  { keys = "␣/", label = "search workspace", weight = 16, cmd = "global_search" },
+  { keys = "*", label = "search selection", weight = 13, cmd = "search_selection" },
+  { keys = "s", label = "select matches", weight = 11, cmd = "select_regex" },
+]
+
+[[group]]
+id = "lsp"
+label = "Code"
+base = 14
+when = ["normal", "lsp"]
+after = ["goto_definition", "goto_reference"]
+entries = [
+  { keys = "gd", label = "definition", weight = 24, cmd = "goto_definition" },
+  { keys = "gr", label = "references", weight = 22, cmd = "goto_reference" },
+  { keys = "␣a", label = "code actions", weight = 18, cmd = "code_action" },
+  { keys = "␣r", label = "rename", weight = 16, cmd = "rename_symbol" },
+  { keys = "C-o", label = "jump back", weight = 14, cmd = "jump_backward", after = ["goto_definition", "goto_reference", "goto_implementation"] },
+]
+
+[[group]]
+id = "diagnostics"
+label = "Fix"
+base = 16
+when = ["normal", "diagnostics"]
+after = ["goto_next_diag", "goto_prev_diag", "diagnostics_picker"]
+entries = [
+  { keys = "]d", label = "next problem", weight = 24, cmd = "goto_next_diag" },
+  { keys = "[d", label = "prev problem", weight = 20, cmd = "goto_prev_diag" },
+  { keys = "␣a", label = "code actions", weight = 18, cmd = "code_action" },
+  { keys = "␣r", label = "rename", weight = 16, cmd = "rename_symbol" },
+]
+
+[[group]]
+id = "edit"
+label = "Edit"
+base = 10
+when = ["normal"]
+after = ["delete_selection", "change_selection", "paste_after", "paste_before", "open_below", "open_above"]
+entries = [
+  { keys = "i", label = "insert", weight = 24, cmd = "insert_mode" },
+  { keys = "a", label = "append", weight = 23, cmd = "append_mode" },
+  { keys = "o", label = "line below", weight = 17, cmd = "open_below" },
+  { keys = "O", label = "line above", weight = 14, cmd = "open_above" },
+  { keys = "d", label = "delete", weight = 22, cmd = "delete_selection" },
+  { keys = "c", label = "change", weight = 21, cmd = "change_selection" },
+  { keys = "y", label = "yank", weight = 19, cmd = "yank" },
+  { keys = "p", label = "paste after", weight = 18, cmd = "paste_after", after = ["yank", "delete_selection", "yank_to_clipboard"] },
+  { keys = "P", label = "paste before", weight = 12, cmd = "paste_before", after = ["yank", "delete_selection"] },
+  { keys = "u", label = "undo", weight = 20, cmd = "undo", after = ["delete_selection", "change_selection", "paste_after", "paste_before"] },
+  { keys = "U", label = "redo", weight = 13, cmd = "redo", after = ["undo"] },
+  { keys = "␣c", label = "toggle comment", weight = 16, cmd = "toggle_comments" },
+  { keys = "C-c", label = "toggle comment", weight = 15, cmd = "toggle_comments" },
+  { keys = ">", label = "indent", weight = 11, cmd = "indent" },
+  { keys = "<", label = "unindent", weight = 10, cmd = "unindent" },
+  { keys = "~", label = "switch case", weight = 8, cmd = "switch_case" },
+  { keys = "=", label = "format", weight = 9, cmd = "format_selections" },
+]
+
+[[group]]
+id = "move"
+label = "Move"
+base = 10
+when = ["normal"]
+entries = [
+  { keys = "w", label = "next word", weight = 24, cmd = "move_next_word_start" },
+  { keys = "b", label = "prev word", weight = 22, cmd = "move_prev_word_start" },
+  { keys = "e", label = "word end", weight = 20, cmd = "move_next_word_end" },
+  { keys = "v", label = "keep selecting", weight = 18, cmd = "select_mode" },
+  { keys = "gh", label = "line start", weight = 16, cmd = "goto_line_start" },
+  { keys = "gl", label = "line end", weight = 14, cmd = "goto_line_end" },
+  { keys = "mm", label = "match bracket", weight = 12, cmd = "match_brackets" },
+]
+
+[[group]]
+id = "object"
+label = "Select"
+base = 15
+when = ["normal"]
+after = ["select_textobject_inner", "select_textobject_around", "match_brackets", "extend_line_below", "select_mode", "move_next_word_start", "move_prev_word_start"]
+entries = [
+  { keys = "miw", label = "word", weight = 24, cmd = "select_textobject_inner", repeat = true },
+  { keys = "x", label = "line", weight = 23, cmd = "extend_line_below", repeat = true },
+  { keys = "w", label = "next word", weight = 20, cmd = "move_next_word_start", repeat = true },
+  { keys = "b", label = "prev word", weight = 19, cmd = "move_prev_word_start", repeat = true },
+  { keys = "mif", label = "function", weight = 17, cmd = "select_textobject_inner", after = ["select_textobject_inner"] },
+  { keys = "mi(", label = "inside brackets", weight = 14, cmd = "select_textobject_inner" },
+  { keys = "%", label = "whole file", weight = 13, cmd = "select_all" },
+  { keys = "mi{", label = "inside block", weight = 12, cmd = "select_textobject_inner", after = ["select_textobject_inner"] },
+  { keys = "mi\"", label = "inside quotes", weight = 11, cmd = "select_textobject_inner" },
+  { keys = "map", label = "paragraph", weight = 9, cmd = "select_textobject_around", after = ["select_textobject_inner"] },
+  { keys = "mac", label = "whole class", weight = 8, cmd = "select_textobject_around", after = ["select_textobject_inner"] },
+]
+
+[[group]]
+id = "files"
+label = "Files"
+base = 11
+when = ["normal"]
+after = ["file_explorer", "buffer_picker", "global_search", "last_picker"]
+entries = [
+  { keys = "␣f", label = "find file", weight = 24, cmd = "file_picker" },
+  { keys = "␣e", label = "file explorer", weight = 22, cmd = "file_explorer" },
+  { keys = "␣/", label = "search workspace", weight = 20, cmd = "global_search" },
+  { keys = "gn", label = "next buffer", weight = 18, cmd = "goto_next_buffer" },
+  { keys = "gp", label = "prev buffer", weight = 16, cmd = "goto_previous_buffer" },
+  { keys = "C-w v", label = "vertical split", weight = 12, cmd = "vsplit" },
+]
+
+[[group]]
+id = "save"
+label = "Save"
+base = 20
+when = ["normal", "modified"]
+after = ["insert_mode", "append_mode", "delete_selection", "change_selection", "normal_mode", "undo", "redo"]
+entries = [
+  { keys = ":w", label = "write", weight = 24, cmd = "write" },
+  { keys = ":wq", label = "write and quit", weight = 18, cmd = "write-quit" },
+  { keys = ":q", label = "quit", weight = 14, cmd = "quit" },
+  { keys = "u", label = "undo", weight = 20, cmd = "undo" },
+  { keys = "=", label = "format", weight = 9, cmd = "format_selections" },
+]
+
+[[group]]
+id = "splits"
+label = "Splits"
+base = 15
+when = ["normal", "splits"]
+after = ["vsplit", "hsplit"]
+entries = [
+  { keys = "C-w w", label = "next split", weight = 24, cmd = "rotate_view" },
+  { keys = "C-w h", label = "split left", weight = 20, cmd = "jump_view_left" },
+  { keys = "C-w l", label = "split right", weight = 18, cmd = "jump_view_right" },
+  { keys = "C-w q", label = "close split", weight = 16, cmd = "wclose" },
+  { keys = "C-w o", label = "only this split", weight = 12, cmd = "wonly" },
+]

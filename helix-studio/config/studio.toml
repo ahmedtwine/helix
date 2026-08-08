@@ -1,0 +1,59 @@
+[panel.tips]
+enabled = true
+order = 0
+anchor = "editor"
+side = "bottom"
+align = "center"
+width = "fill"
+height = "fit"
+offset = [0, -1]
+style = "ui.statusline"
+rows = 2
+sections = 6
+per-section = 6
+grid = true
+separator = "  "
+
+[panel.sidebar]
+enabled = false
+dismissable = true
+order = 1
+anchor = "editor"
+side = "left"
+align = "start"
+width = "25%"
+height = "fill"
+border = true
+style = "ui.background"
+mode = "explorer"
+
+[panel.diff]
+enabled = false
+dismissable = true
+order = 2
+anchor = "editor"
+side = "over"
+align = "center"
+width = "90%"
+height = "80%"
+border = true
+padding = [1, 0]
+style = "ui.background"
+context = 3
+
+[panel.hover]
+enabled = true
+order = 3
+anchor = "cursor"
+side = "bottom"
+align = "start"
+width = "fit"
+height = "fit"
+offset = [0, -1]
+border = true
+padding = [1, 0]
+style = "ui.popup"
+mode = "signature"
+delay = 400
+lines = 8
+max-width = 110

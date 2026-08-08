@@ -47,6 +47,7 @@ use helix_core::{
 use helix_view::{
     editor::Action,
     graphics::{CursorKind, Margin, Modifier, Rect},
+    input::{MouseButton, MouseEvent, MouseEventKind},
     theme::Style,
     view::ViewPosition,
     Document, DocumentId, Editor,
@@ -252,6 +253,9 @@ pub struct Picker<T: 'static + Send + Sync, D: 'static> {
     prompt: Prompt,
     query: PickerQuery,
 
+    list_area: Rect,
+    list_offset: u32,
+
     /// Whether to show the preview panel (default true)
     show_preview: bool,
     /// Constraints for tabular formatting
@@ -383,6 +387,8 @@ impl<T: 'static + Send + Sync, D: 'static + Send + Sync> Picker<T, D> {
             cursor: 0,
             prompt,
             query,
+            list_area: Rect::default(),
+            list_offset: 0,
             truncate_start: true,
             show_preview: true,
             callback_fn: Box::new(callback_fn),
@@ -518,6 +524,48 @@ impl<T: 'static + Send + Sync, D: 'static + Send + Sync> Picker<T, D> {
         } else {
             0
         }
+    }
+
+    fn item_at(&self, column: u16, row: u16, count: u32) -> Option<u32> {
+        let area = self.list_area;
+        let inside = row >= area.top()
+            && row < area.bottom()
+            && column >= area.left()
+            && column < area.right();
+
+        if !inside {
+            return None;
+        }
+
+        let index = self.list_offset + (row - area.top()) as u32;
+        (index < count).then_some(index)
+    }
+
+    fn handle_mouse_event(&mut self, event: &MouseEvent, ctx: &mut Context) -> EventResult {
+        let count = self.matcher.snapshot().matched_item_count();
+        if count == 0 {
+            return EventResult::Consumed(None);
+        }
+
+        match event.kind {
+            MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => {
+                let direction = if matches!(event.kind, MouseEventKind::ScrollUp) {
+                    Direction::Backward
+                } else {
+                    Direction::Forward
+                };
+                let amount = ctx.editor.config().scroll_lines.unsigned_abs().max(1) as u32;
+                self.move_by(amount, direction);
+            }
+            MouseEventKind::Down(MouseButton::Left) => {
+                if let Some(index) = self.item_at(event.column, event.row, count) {
+                    self.cursor = index;
+                }
+            }
+            _ => {}
+        }
+
+        EventResult::Consumed(None)
     }
 
     pub fn toggle_preview(&mut self) {
@@ -746,6 +794,8 @@ impl<T: 'static + Send + Sync, D: 'static + Send + Sync> Picker<T, D> {
         let inner = inner.clip_top(2);
         let rows = inner.height.saturating_sub(self.header_height()) as u32;
         let offset = self.cursor - (self.cursor % std::cmp::max(1, rows));
+        self.list_area = inner.clip_top(self.header_height());
+        self.list_offset = offset;
         let cursor = self.cursor.saturating_sub(offset);
         let end = offset
             .saturating_add(rows)
@@ -1059,7 +1109,7 @@ impl<I: 'static + Send + Sync, D: 'static + Send + Sync> Component for Picker<I,
             Event::Resize(..) => return EventResult::Consumed(None),
             // Picker is a modal and should consume mouse events so clicks don't fall
             // through to the editor underneath
-            Event::Mouse(_) => return EventResult::Consumed(None),
+            Event::Mouse(event) => return self.handle_mouse_event(event, ctx),
             _ => return EventResult::Ignored(None),
         };
 

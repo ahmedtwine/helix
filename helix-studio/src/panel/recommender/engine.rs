@@ -7,10 +7,10 @@ pub const CATALOG: &str = include_str!("../../../config/commands.toml");
 
 const HISTORY: usize = 8;
 const SCALE: u32 = 4;
-const EDGE_BONUS: u32 = 96;
+const EDGE_BONUS: u32 = 40;
 const GROUP_BONUS: u32 = 96;
-const LEARNED_WEIGHT: u32 = 6;
-const LEARNED_CAP: u32 = 48;
+const LEARNED_WEIGHT: u32 = 4;
+const LEARNED_CAP: u32 = 24;
 const REPEAT_PENALTY: u32 = 60;
 const PER_SECTION: usize = 6;
 
@@ -425,15 +425,72 @@ mod tests {
     #[test]
     fn the_command_just_run_is_pushed_down() {
         let mut engine = engine();
-        engine.record("move_next_word_start");
+        engine.record("insert_mode");
 
-        let moves = engine
+        let edit = engine
             .suggest(&Signals::default(), 99)
             .into_iter()
-            .find(|section| section.label == "Move")
+            .find(|section| section.label == "Edit")
             .unwrap();
 
-        assert_ne!(moves.items[0].keys, "w");
+        assert_ne!(edit.items[0].keys, "i");
+    }
+
+    #[test]
+    fn a_recency_edge_nudges_a_group_without_inverting_it() {
+        let mut engine = engine();
+        engine.record("undo");
+
+        let edit = engine
+            .suggest(&Signals::default(), 99)
+            .into_iter()
+            .find(|section| section.label == "Edit")
+            .unwrap();
+
+        let redo = edit.items.iter().position(|item| item.keys == "U").unwrap();
+        let insert = edit.items.iter().position(|item| item.keys == "i").unwrap();
+
+        assert!(
+            insert < redo,
+            "`U redo` (weight 13) overtook `i insert` (weight 24) on one edge"
+        );
+    }
+
+    #[test]
+    fn a_plain_buffer_teaches_selection_then_editing_then_movement() {
+        let engine = engine();
+        let sections = engine.suggest(&Signals::default(), 3);
+
+        assert_eq!(labels(&sections), vec!["Select", "Edit", "Navigate"]);
+    }
+
+    #[test]
+    fn fast_navigation_is_offered_in_a_plain_buffer() {
+        let engine = engine();
+        let nav = engine
+            .suggest(&Signals::default(), 99)
+            .into_iter()
+            .find(|section| section.label == "Navigate")
+            .unwrap();
+
+        let keys: Vec<&str> = nav.items.iter().map(|item| item.keys.as_str()).collect();
+        assert_eq!(keys[0], "C-d");
+        assert!(keys.contains(&"C-u"));
+        assert!(keys.contains(&"C-o"));
+    }
+
+    #[test]
+    fn jumping_to_a_definition_promotes_the_way_back() {
+        let mut engine = engine();
+        engine.record("goto_definition");
+
+        let nav = engine
+            .suggest(&Signals { lsp: true, ..Signals::default() }, 99)
+            .into_iter()
+            .find(|section| section.label == "Navigate")
+            .unwrap();
+
+        assert_eq!(nav.items[0].keys, "C-o");
     }
 
     fn selected(linewise: bool, multiline: bool) -> Signals {
@@ -640,6 +697,21 @@ mod tests {
     }
 
     #[test]
+    fn the_sidebar_taking_the_keyboard_takes_over_the_panel_too() {
+        let engine = engine();
+        let sections = engine.suggest(&pending("sidebar"), 99);
+
+        assert_eq!(labels(&sections), vec!["Explorer"]);
+
+        let keys: Vec<&str> = sections[0].items.iter().map(|i| i.keys.as_str()).collect();
+        assert_eq!(keys[0], "Enter");
+        assert!(keys.contains(&"C-v"));
+        assert!(keys.contains(&"C-s"));
+
+        assert!(engine.pinned(&pending("sidebar")).is_empty());
+    }
+
+    #[test]
     fn a_pending_prefix_takes_over_the_whole_panel() {
         let engine = engine();
         let sections = engine.suggest(&pending("goto"), 99);
@@ -667,7 +739,7 @@ mod tests {
         let engine = engine();
         let sections = engine.suggest(&pending("goto"), 99);
 
-        assert!(!labels(&sections).contains(&"Move"));
+        assert!(!labels(&sections).contains(&"Navigate"));
         assert!(!labels(&sections).contains(&"Search"));
     }
 
@@ -688,7 +760,7 @@ mod tests {
         let sections = engine.suggest(&pending("registers"), 99);
 
         assert!(!sections.is_empty());
-        assert!(labels(&sections).contains(&"Move"));
+        assert!(labels(&sections).contains(&"Navigate"));
     }
 
     #[test]

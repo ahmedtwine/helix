@@ -10,6 +10,7 @@ pub enum Anchor {
     Editor,
     Cursor,
     Status,
+    Free,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -20,6 +21,18 @@ pub enum Side {
     Left,
     Right,
     Over,
+}
+
+impl Side {
+    pub fn consume(self, free: Rect, taken: Rect) -> Rect {
+        match self {
+            Side::Top => free.clip_top(taken.bottom().saturating_sub(free.y)),
+            Side::Bottom => free.clip_bottom(free.bottom().saturating_sub(taken.y)),
+            Side::Left => free.clip_left(taken.right().saturating_sub(free.x)),
+            Side::Right => free.clip_right(free.right().saturating_sub(taken.x)),
+            Side::Over => free,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -155,6 +168,35 @@ fn shift(value: u16, offset: i16, min: u16, max: u16, size: u16) -> u16 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_bottom_panel_leaves_the_space_above_it_free() {
+        let editor = Rect::new(0, 1, 120, 40);
+        let tips = Rect::new(0, 39, 120, 2);
+
+        let free = Side::Bottom.consume(editor, tips);
+
+        assert_eq!(free.y, 1);
+        assert_eq!(free.bottom(), 39);
+    }
+
+    #[test]
+    fn a_left_panel_leaves_the_space_beside_it_free() {
+        let editor = Rect::new(0, 1, 120, 40);
+        let sidebar = Rect::new(0, 1, 30, 40);
+
+        let free = Side::Left.consume(editor, sidebar);
+
+        assert_eq!(free.x, 30);
+        assert_eq!(free.right(), 120);
+    }
+
+    #[test]
+    fn an_overlay_panel_claims_nothing() {
+        let editor = Rect::new(0, 1, 120, 40);
+
+        assert_eq!(Side::Over.consume(editor, Rect::new(10, 10, 20, 20)), editor);
+    }
 
     const VIEWPORT: Rect = Rect {
         x: 0,

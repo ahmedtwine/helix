@@ -11,14 +11,14 @@ style = "ui.statusline"
 rows = 2
 sections = 6
 per-section = 6
-grid = true
-separator = "  "
+grid = false
+separator = "   "
 
 [panel.sidebar]
 enabled = false
 dismissable = true
 order = 1
-anchor = "editor"
+anchor = "free"
 side = "left"
 align = "start"
 width = "25%"

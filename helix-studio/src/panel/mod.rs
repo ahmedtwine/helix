@@ -50,6 +50,10 @@ pub trait Source: 'static {
         false
     }
 
+    fn dismissed(&mut self) -> bool {
+        false
+    }
+
     fn render(&mut self, area: Rect, surface: &mut Surface, cx: &mut Context);
 }
 
@@ -130,14 +134,14 @@ pub struct Panel {
 }
 
 impl Panel {
-    fn render(&mut self, viewport: Rect, surface: &mut Surface, cx: &mut Context) {
+    fn render(&mut self, viewport: Rect, free: &mut Rect, surface: &mut Surface, cx: &mut Context) {
         self.area = Rect::default();
 
         if !self.active || !self.source.visible(cx.editor) {
             return;
         }
 
-        let anchor = anchor(self.config.placement.anchor, viewport, cx.editor);
+        let anchor = anchor(self.config.placement.anchor, viewport, *free, cx.editor);
         let (extra_width, extra_height) = self.config.chrome();
         let available = (
             viewport.width.saturating_sub(extra_width),
@@ -150,6 +154,8 @@ impl Panel {
         if area.width <= extra_width || area.height <= extra_height {
             return;
         }
+
+        *free = self.config.placement.side.consume(*free, area);
 
         let style = cx.editor.theme.get(&self.config.style);
         surface.clear_with(area, style);
@@ -176,13 +182,16 @@ impl Panel {
     }
 }
 
-fn anchor(anchor: Anchor, viewport: Rect, editor: &Editor) -> Rect {
+fn editor_area(viewport: Rect, editor: &Editor) -> Rect {
+    let bufferline = u16::from(Chrome::visible(editor));
+    viewport.clip_top(bufferline).clip_bottom(1)
+}
+
+fn anchor(anchor: Anchor, viewport: Rect, free: Rect, editor: &Editor) -> Rect {
     match anchor {
         Anchor::Viewport => viewport,
-        Anchor::Editor => {
-            let bufferline = u16::from(Chrome::visible(editor));
-            viewport.clip_top(bufferline).clip_bottom(1)
-        }
+        Anchor::Free => free,
+        Anchor::Editor => editor_area(viewport, editor),
         Anchor::Status => editor
             .tree
             .try_get(editor.tree.focus)
@@ -206,10 +215,36 @@ fn anchor(anchor: Anchor, viewport: Rect, editor: &Editor) -> Rect {
 #[derive(Default)]
 struct Registry {
     panels: Vec<Panel>,
+    busy: bool,
+    keyboard: Option<String>,
 }
 
 thread_local! {
     static REGISTRY: RefCell<Registry> = RefCell::new(Registry::default());
+}
+
+fn with_panels<T: Default>(act: impl FnOnce(&mut Vec<Panel>) -> T) -> T {
+    let Some(mut panels) = REGISTRY.with_borrow_mut(|registry| {
+        (!registry.busy).then(|| {
+            registry.busy = true;
+            std::mem::take(&mut registry.panels)
+        })
+    }) else {
+        return T::default();
+    };
+
+    let outcome = act(&mut panels);
+
+    REGISTRY.with_borrow_mut(|registry| {
+        registry.keyboard = panels
+            .iter()
+            .find(|panel| panel.active && panel.config.dismissable)
+            .map(|panel| panel.id.clone());
+        registry.panels = panels;
+        registry.busy = false;
+    });
+
+    outcome
 }
 
 fn build(id: &str, config: &PanelConfig) -> Option<Box<dyn Source>> {
@@ -256,42 +291,36 @@ pub fn hover_delay() -> u64 {
 }
 
 pub fn render(viewport: Rect, surface: &mut Surface, cx: &mut Context) {
-    REGISTRY.with_borrow_mut(|registry| {
-        for panel in registry.panels.iter_mut() {
-            panel.render(viewport, surface, cx);
+    with_panels(|panels| {
+        let mut free = editor_area(viewport, cx.editor);
+        for panel in panels.iter_mut() {
+            panel.render(viewport, &mut free, surface, cx);
         }
     });
 }
 
 pub fn toggle(id: &str) -> bool {
-    REGISTRY.with_borrow_mut(|registry| {
-        match registry.panels.iter_mut().find(|panel| panel.id == id) {
-            Some(panel) => {
-                panel.active = !panel.active;
-                helix_event::request_redraw();
-                true
-            }
-            None => false,
+    with_panels(|panels| match panels.iter_mut().find(|panel| panel.id == id) {
+        Some(panel) => {
+            panel.active = !panel.active;
+            helix_event::request_redraw();
+            true
         }
+        None => false,
     })
 }
 
 pub fn handle_input(event: &Event, cx: &mut Context) -> bool {
-    REGISTRY.with_borrow_mut(|registry| {
+    with_panels(|panels| {
         if let Event::Key(key) = event {
-            if let Some(panel) = registry
-                .panels
-                .iter_mut()
-                .find(|panel| panel.toggle == Some(*key))
-            {
+            if let Some(panel) = panels.iter_mut().find(|panel| panel.toggle == Some(*key)) {
                 panel.active = !panel.active;
                 helix_event::request_redraw();
                 return true;
             }
 
             if key.code == KeyCode::Esc && key.modifiers.is_empty() {
-                let dismissed = registry
-                    .panels
+                let dismissed = panels
                     .iter_mut()
                     .filter(|panel| panel.active && panel.config.dismissable)
                     .fold(false, |_, panel| {
@@ -306,18 +335,28 @@ pub fn handle_input(event: &Event, cx: &mut Context) -> bool {
             }
         }
 
-        registry
-            .panels
+        panels
             .iter_mut()
             .rev()
             .filter(|panel| panel.active)
-            .any(|panel| panel.source.handle_input(event, panel.area, cx))
+            .any(|panel| {
+                let handled = panel.source.handle_input(event, panel.area, cx);
+                if panel.source.dismissed() {
+                    panel.active = false;
+                    helix_event::request_redraw();
+                }
+                handled
+            })
     })
 }
 
+pub fn keyboard_owner() -> Option<String> {
+    REGISTRY.with_borrow(|registry| registry.keyboard.clone())
+}
+
 pub fn observe(event: &StudioEvent, editor: &mut Editor) {
-    REGISTRY.with_borrow_mut(|registry| {
-        for panel in registry.panels.iter_mut() {
+    with_panels(|panels| {
+        for panel in panels.iter_mut() {
             panel.source.observe(event, editor);
         }
     });
@@ -342,6 +381,22 @@ mod tests {
 
         assert_eq!(tips.placement.side, layout::Side::Top);
         assert!(tips.enabled);
+    }
+
+    #[test]
+    fn a_panel_that_reaches_back_into_the_registry_does_not_panic() {
+        assert_eq!(with_panels(|_| with_panels(|panels| panels.len())), 0);
+    }
+
+    #[test]
+    fn the_registry_survives_a_panel_reaching_back_into_it() {
+        install();
+
+        let before = with_panels(|panels| panels.len());
+        assert!(before > 0);
+
+        with_panels(|_| with_panels(|_| ()));
+        assert_eq!(with_panels(|panels| panels.len()), before);
     }
 
     #[test]

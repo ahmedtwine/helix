@@ -74,10 +74,12 @@ impl Recommender {
         Signals {
             mode: editor.mode(),
             focus: self.focus,
-            pending: editor
-                .autoinfo
-                .as_ref()
-                .map(|info| info.title.to_lowercase()),
+            pending: super::keyboard_owner().or_else(|| {
+                editor
+                    .autoinfo
+                    .as_ref()
+                    .map(|info| info.title.to_lowercase())
+            }),
             modified: doc.is_some_and(|doc| doc.is_modified()),
             lsp: doc.is_some_and(|doc| doc.language_servers().next().is_some()),
             diagnostics: doc.is_some_and(|doc| !doc.diagnostics().is_empty()),
@@ -117,23 +119,21 @@ impl Recommender {
         let mut cells = Vec::new();
 
         for section in sections {
-            cells.push(Cell {
-                parts: vec![(format!(" {} ", section.label), Paint::Chip)],
-            });
+            let mut chip = Some(format!(" {} ", section.label));
 
             for item in section.items {
                 let used = item.keys.width() + item.label.width() + 2;
                 let padding = " ".repeat(pad.saturating_sub(used));
 
-                cells.push(Cell {
-                    parts: vec![
-                        (format!(" {}", item.keys), Paint::Keys),
-                        (
-                            format!(" {}{}{}", item.label, padding, self.separator),
-                            Paint::Label,
-                        ),
-                    ],
-                });
+                let mut parts = Vec::with_capacity(3);
+                parts.extend(chip.take().map(|chip| (chip, Paint::Chip)));
+                parts.push((format!(" {}", item.keys), Paint::Keys));
+                parts.push((
+                    format!(" {}{}{}", item.label, padding, self.separator),
+                    Paint::Label,
+                ));
+
+                cells.push(Cell { parts });
             }
         }
 
@@ -141,7 +141,7 @@ impl Recommender {
     }
 }
 
-fn pack(cells: Vec<Cell>, width: usize, rows: usize, reserve: usize) -> Vec<Vec<Cell>> {
+fn pack(cells: &[Cell], width: usize, rows: usize, reserve: usize) -> Vec<Vec<usize>> {
     if width == 0 || rows == 0 {
         return Vec::new();
     }
@@ -151,11 +151,11 @@ fn pack(cells: Vec<Cell>, width: usize, rows: usize, reserve: usize) -> Vec<Vec<
         false => width,
     };
 
-    let mut lines: Vec<Vec<Cell>> = Vec::new();
-    let mut line: Vec<Cell> = Vec::new();
+    let mut lines: Vec<Vec<usize>> = Vec::new();
+    let mut line: Vec<usize> = Vec::new();
     let mut used = 0usize;
 
-    for cell in cells {
+    for (index, cell) in cells.iter().enumerate() {
         let size = cell.width();
         if size > limit(lines.len()) {
             continue;
@@ -170,7 +170,7 @@ fn pack(cells: Vec<Cell>, width: usize, rows: usize, reserve: usize) -> Vec<Vec<
         }
 
         used += size;
-        line.push(cell);
+        line.push(index);
     }
 
     if !line.is_empty() {
@@ -180,11 +180,23 @@ fn pack(cells: Vec<Cell>, width: usize, rows: usize, reserve: usize) -> Vec<Vec<
     lines
 }
 
+fn fit(cells: &[Cell], width: usize, rows: usize, reserve: usize) -> Vec<Vec<usize>> {
+    let mut budget = rows;
+
+    loop {
+        let lines = pack(cells, width, budget, reserve);
+        if budget <= 1 || lines.len() >= budget {
+            return lines;
+        }
+        budget = lines.len().max(1);
+    }
+}
+
 impl Source for Recommender {
     fn size(&self, editor: &Editor, available: (u16, u16)) -> (u16, u16) {
         let reserve: usize = self.pinned(editor).iter().map(Cell::width).sum();
-        let lines = pack(
-            self.cells(editor),
+        let lines = fit(
+            &self.cells(editor),
             available.0 as usize,
             self.rows.min(available.1.max(1) as usize),
             reserve,
@@ -197,7 +209,9 @@ impl Source for Recommender {
         match event {
             StudioEvent::Command { name, .. } => self.engine.record(name),
             StudioEvent::Hover(Hover::Tab(_)) => self.focus = Focus::Tab,
-            StudioEvent::Hover(Hover::None) => self.focus = Focus::Editor,
+            StudioEvent::Hover(Hover::None) | StudioEvent::ModeChanged { .. } => {
+                self.focus = Focus::Editor
+            }
             _ => {}
         }
     }
@@ -206,32 +220,17 @@ impl Source for Recommender {
         let pinned = self.pinned(cx.editor);
         let reserve: usize = pinned.iter().map(Cell::width).sum();
 
+        let cells = self.cells(cx.editor);
         let rows = self.rows.min(area.height.max(1) as usize);
-        let lines = pack(
-            self.cells(cx.editor),
-            area.width as usize,
-            rows,
-            reserve,
-        );
+        let lines = fit(&cells, area.width as usize, rows, reserve);
 
         let theme = &cx.editor.theme;
-        let chip = theme
-            .try_get("ui.statusline.active")
-            .unwrap_or_else(|| theme.get("ui.statusline"));
-        let keys = foreground(theme, "keyword");
-        let label = foreground(theme, "comment");
-
-        let paint = |surface: &mut Surface, mut x: u16, y: u16, cells: &[Cell]| {
-            for cell in cells {
-                for (text, kind) in &cell.parts {
-                    let style = match kind {
-                        Paint::Chip => chip,
-                        Paint::Keys => keys,
-                        Paint::Label => label,
-                    };
-                    x = write(surface, x, y, area, text, style);
-                }
-            }
+        let palette = Palette {
+            chip: theme
+                .try_get("ui.statusline.active")
+                .unwrap_or_else(|| theme.get("ui.statusline")),
+            keys: foreground(theme, "keyword"),
+            label: foreground(theme, "comment"),
         };
 
         for (index, line) in lines.iter().enumerate() {
@@ -239,13 +238,40 @@ impl Source for Recommender {
             if y >= area.bottom() {
                 break;
             }
-            paint(surface, area.x, y, line);
+            paint(surface, area.x, y, area, palette, line.iter().map(|index| &cells[*index]));
         }
 
         if !pinned.is_empty() {
-            let y = area.y + (rows.min(lines.len().max(1)) as u16).saturating_sub(1);
+            let y = area.y + (lines.len().max(1) as u16).saturating_sub(1);
             let x = area.right().saturating_sub(reserve as u16).max(area.x);
-            paint(surface, x, y, &pinned);
+            paint(surface, x, y, area, palette, pinned.iter());
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct Palette {
+    chip: Style,
+    keys: Style,
+    label: Style,
+}
+
+fn paint<'a>(
+    surface: &mut Surface,
+    mut x: u16,
+    y: u16,
+    area: Rect,
+    palette: Palette,
+    cells: impl Iterator<Item = &'a Cell>,
+) {
+    for cell in cells {
+        for (text, kind) in &cell.parts {
+            let style = match kind {
+                Paint::Chip => palette.chip,
+                Paint::Keys => palette.keys,
+                Paint::Label => palette.label,
+            };
+            x = write(surface, x, y, area, text, style);
         }
     }
 }
@@ -306,24 +332,26 @@ mod tests {
         (0..count).map(|index| cell(&format!("k{index}"))).collect()
     }
 
-    fn widest(lines: &[Vec<Cell>]) -> usize {
-        lines
-            .iter()
-            .map(|line| line.iter().map(Cell::width).sum::<usize>())
-            .max()
-            .unwrap_or(0)
+    fn span(cells: &[Cell], line: &[usize]) -> usize {
+        line.iter().map(|index| cells[*index].width()).sum()
+    }
+
+    fn widest(cells: &[Cell], lines: &[Vec<usize>]) -> usize {
+        lines.iter().map(|line| span(cells, line)).max().unwrap_or(0)
     }
 
     #[test]
     fn everything_on_one_row_when_it_fits() {
-        let lines = pack(cells(3), 200, 2, 0);
+        let cells = cells(3);
+        let lines = pack(&cells, 200, 2, 0);
         assert_eq!(lines.len(), 1);
         assert_eq!(lines[0].len(), 3);
     }
 
     #[test]
     fn spillover_wraps_onto_a_second_row() {
-        let lines = pack(cells(8), 40, 2, 0);
+        let cells = cells(8);
+        let lines = pack(&cells, 40, 2, 0);
         assert_eq!(lines.len(), 2);
         assert!(lines[0].len() < 8);
     }
@@ -331,30 +359,41 @@ mod tests {
     #[test]
     fn no_row_ever_exceeds_the_width() {
         let width = 37;
-        let lines = pack(cells(40), width, 4, 0);
-        assert!(widest(&lines) <= width);
+        let cells = cells(40);
+        let lines = pack(&cells, width, 4, 0);
+        assert!(widest(&cells, &lines) <= width);
     }
 
     #[test]
-    fn a_key_is_never_split_from_its_label() {
-        let lines = pack(cells(40), 37, 4, 0);
-        for line in &lines {
-            for cell in line {
-                assert_eq!(cell.parts.len(), 2);
+    fn a_section_chip_never_ends_up_without_its_first_item() {
+        let recommender = Recommender::new(&toml::Table::new());
+        let sections = recommender.engine.suggest(&engine::Signals::default(), 8);
+        let cells = recommender.build(sections, 0);
+
+        assert!(cells
+            .iter()
+            .any(|cell| cell.parts.iter().any(|(_, kind)| *kind == Paint::Chip)));
+
+        for cell in &cells {
+            if cell.parts.iter().any(|(_, kind)| *kind == Paint::Chip) {
+                assert!(
+                    cell.parts.iter().any(|(_, kind)| *kind == Paint::Keys),
+                    "a section chip can be wrapped away from every one of its items"
+                );
             }
         }
     }
 
     #[test]
     fn the_row_budget_is_never_exceeded() {
-        let lines = pack(cells(200), 30, 2, 0);
-        assert_eq!(lines.len(), 2);
+        let cells = cells(200);
+        assert_eq!(pack(&cells, 30, 2, 0).len(), 2);
     }
 
     #[test]
     fn a_single_row_budget_truncates_instead_of_wrapping() {
-        let lines = pack(cells(200), 30, 1, 0);
-        assert_eq!(lines.len(), 1);
+        let cells = cells(200);
+        assert_eq!(pack(&cells, 30, 1, 0).len(), 1);
     }
 
     #[test]
@@ -362,8 +401,8 @@ mod tests {
         let mut mixed = vec![cell("this-one-is-very-wide-indeed")];
         mixed.extend(cells(2));
 
-        let lines = pack(mixed, 20, 2, 0);
-        assert!(widest(&lines) <= 20);
+        let lines = pack(&mixed, 20, 2, 0);
+        assert!(widest(&mixed, &lines) <= 20);
         assert!(!lines.is_empty());
     }
 
@@ -371,9 +410,10 @@ mod tests {
     fn the_reserved_area_is_kept_clear_on_the_last_row() {
         let reserve = 30;
         let width = 60;
-        let lines = pack(cells(40), width, 2, reserve);
+        let cells = cells(40);
+        let lines = pack(&cells, width, 2, reserve);
 
-        let last: usize = lines.last().unwrap().iter().map(Cell::width).sum();
+        let last = span(&cells, lines.last().unwrap());
         assert!(
             last <= width - reserve,
             "last row used {last} of the {} it may use",
@@ -383,20 +423,39 @@ mod tests {
 
     #[test]
     fn earlier_rows_still_use_the_full_width() {
-        let lines = pack(cells(40), 60, 3, 30);
-        let first: usize = lines[0].iter().map(Cell::width).sum();
-        assert!(first > 30);
+        let cells = cells(40);
+        let lines = pack(&cells, 60, 3, 30);
+        assert!(span(&cells, &lines[0]) > 30);
     }
 
     #[test]
     fn a_single_row_panel_still_honours_the_reservation() {
-        let lines = pack(cells(40), 60, 1, 30);
-        let only: usize = lines[0].iter().map(Cell::width).sum();
-        assert!(only <= 30);
+        let cells = cells(40);
+        let lines = pack(&cells, 60, 1, 30);
+        assert!(span(&cells, &lines[0]) <= 30);
+    }
+
+    #[test]
+    fn the_panel_never_grows_a_row_it_cannot_fill() {
+        let cells = cells(2);
+        assert_eq!(fit(&cells, 200, 3, 0).len(), 1);
+    }
+
+    #[test]
+    fn the_reservation_follows_the_row_that_actually_ends_the_panel() {
+        let cells = cells(3);
+        let lines = fit(&cells, 200, 3, 160);
+
+        assert_eq!(lines.len(), 1);
+        assert!(
+            span(&cells, &lines[0]) <= 40,
+            "the pinned block would have been painted over the predictions"
+        );
     }
 
     #[test]
     fn zero_width_produces_nothing_rather_than_looping() {
-        assert!(pack(cells(4), 0, 2, 0).is_empty());
+        let cells = cells(4);
+        assert!(pack(&cells, 0, 2, 0).is_empty());
     }
 }

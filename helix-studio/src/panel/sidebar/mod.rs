@@ -5,7 +5,8 @@ use std::path::{Path, PathBuf};
 use helix_term::compositor::{Context, Event};
 use helix_view::editor::Action;
 use helix_view::graphics::Rect;
-use helix_view::input::{MouseButton, MouseEventKind};
+use helix_view::input::{KeyEvent, MouseButton, MouseEventKind};
+use helix_view::keyboard::{KeyCode, KeyModifiers};
 use helix_view::Editor;
 use tui::buffer::Buffer as Surface;
 
@@ -15,6 +16,7 @@ use crate::tree::Tree;
 use modes::{Changes, Mode};
 
 const SCROLL: usize = 3;
+const PAGE: usize = 10;
 
 struct Tab {
     mode: Mode,
@@ -27,6 +29,8 @@ pub struct Sidebar {
     tree: Option<Tree>,
     changes: Changes,
     offset: usize,
+    cursor: usize,
+    closing: bool,
     tabs: Vec<Tab>,
 }
 
@@ -43,6 +47,8 @@ impl Sidebar {
             tree: None,
             changes: Changes::default(),
             offset: 0,
+            cursor: 0,
+            closing: false,
             tabs: Vec::new(),
         }
     }
@@ -55,6 +61,108 @@ impl Sidebar {
         self.mode = mode;
         self.offset = 0;
         modes::remember(mode);
+    }
+
+    fn cycle(&mut self) {
+        let next = Mode::ALL
+            .iter()
+            .cycle()
+            .skip_while(|mode| **mode != self.mode)
+            .nth(1)
+            .copied()
+            .unwrap_or(self.mode);
+
+        self.switch(next);
+    }
+
+    fn cursor(&self) -> usize {
+        match self.mode {
+            Mode::Explorer => self.tree.as_ref().map_or(0, |tree| tree.cursor),
+            Mode::Git => self.cursor,
+        }
+    }
+
+    fn last(&self) -> usize {
+        match self.mode {
+            Mode::Explorer => self.tree.as_ref().map_or(0, Tree::len),
+            Mode::Git => self.changes.paths().len(),
+        }
+        .saturating_sub(1)
+    }
+
+    fn step(&mut self, amount: usize, forward: bool) {
+        match self.mode {
+            Mode::Explorer => {
+                if let Some(tree) = self.tree.as_mut() {
+                    tree.move_by(amount, forward);
+                }
+            }
+            Mode::Git => {
+                self.cursor = match forward {
+                    true => self.cursor.saturating_add(amount).min(self.last()),
+                    false => self.cursor.saturating_sub(amount),
+                }
+            }
+        }
+    }
+
+    fn jump(&mut self, end: bool) {
+        match self.mode {
+            Mode::Explorer => {
+                if let Some(tree) = self.tree.as_mut() {
+                    match end {
+                        true => tree.to_end(),
+                        false => tree.to_start(),
+                    }
+                }
+            }
+            Mode::Git => {
+                self.cursor = match end {
+                    true => self.last(),
+                    false => 0,
+                }
+            }
+        }
+    }
+
+    fn collapse(&mut self) {
+        if let Some(tree) = self.tree.as_mut() {
+            tree.collapse_or_parent();
+        }
+    }
+
+    fn enter(&mut self, action: Action, cx: &mut Context) {
+        let index = self.cursor();
+        self.activate(index, action, cx);
+    }
+
+    fn key(&mut self, key: KeyEvent, cx: &mut Context) -> bool {
+        self.ensure(cx.editor);
+
+        let plain = key.modifiers.is_empty();
+        let ctrl = key.modifiers == KeyModifiers::CONTROL;
+
+        match key.code {
+            KeyCode::Down => self.step(1, true),
+            KeyCode::Up => self.step(1, false),
+            KeyCode::Char('j') if plain => self.step(1, true),
+            KeyCode::Char('k') if plain => self.step(1, false),
+            KeyCode::Char('d') if ctrl => self.step(PAGE, true),
+            KeyCode::Char('u') if ctrl => self.step(PAGE, false),
+            KeyCode::Char('g') if plain => self.jump(false),
+            KeyCode::Char('G') if plain => self.jump(true),
+            KeyCode::Left => self.collapse(),
+            KeyCode::Char('h') if plain => self.collapse(),
+            KeyCode::Tab => self.cycle(),
+            KeyCode::Char('v') if ctrl => self.enter(Action::VerticalSplit, cx),
+            KeyCode::Char('s') if ctrl => self.enter(Action::HorizontalSplit, cx),
+            KeyCode::Enter | KeyCode::Right => self.enter(Action::Replace, cx),
+            KeyCode::Char('l') if plain => self.enter(Action::Replace, cx),
+            _ => return false,
+        }
+
+        helix_event::request_redraw();
+        true
     }
 
     fn ensure(&mut self, editor: &Editor) {
@@ -93,8 +201,8 @@ impl Sidebar {
         self.offset
     }
 
-    fn activate(&mut self, index: usize, cx: &mut Context) {
-        match self.mode {
+    fn activate(&mut self, index: usize, action: Action, cx: &mut Context) {
+        let path = match self.mode {
             Mode::Explorer => {
                 let Some(tree) = self.tree.as_mut() else {
                     return;
@@ -111,16 +219,19 @@ impl Sidebar {
 
                 if is_dir {
                     tree.toggle(index);
-                } else {
-                    open(cx.editor, &path);
+                    return;
                 }
+
+                path
             }
-            Mode::Git => {
-                if let Some(path) = self.changes.paths().get(index) {
-                    open(cx.editor, path);
-                }
-            }
-        }
+            Mode::Git => match self.changes.paths().get(index) {
+                Some(path) => path.clone(),
+                None => return,
+            },
+        };
+
+        open(cx.editor, &path, action);
+        self.closing = true;
     }
 }
 
@@ -131,9 +242,15 @@ impl Source for Sidebar {
         }
     }
 
+    fn dismissed(&mut self) -> bool {
+        std::mem::take(&mut self.closing)
+    }
+
     fn handle_input(&mut self, event: &Event, area: Rect, cx: &mut Context) -> bool {
-        let Event::Mouse(mouse) = event else {
-            return false;
+        let mouse = match event {
+            Event::Key(key) => return self.key(*key, cx),
+            Event::Mouse(mouse) => mouse,
+            _ => return false,
         };
 
         if area.width == 0
@@ -167,7 +284,7 @@ impl Source for Sidebar {
                 } else {
                     let body = area.clip_top(1);
                     let index = self.offset + (mouse.row - body.y) as usize;
-                    self.activate(index, cx);
+                    self.activate(index, Action::Replace, cx);
                 }
                 helix_event::request_redraw();
                 true
@@ -242,7 +359,7 @@ impl Source for Sidebar {
                     .iter()
                     .map(|path| (label(path), false))
                     .collect(),
-                usize::MAX,
+                self.cursor,
             ),
         };
 
@@ -264,7 +381,7 @@ impl Source for Sidebar {
 }
 
 fn root() -> PathBuf {
-    helix_stdx::env::current_working_dir()
+    crate::workspace_root()
 }
 
 fn current_path(editor: &Editor) -> Option<PathBuf> {
@@ -279,8 +396,8 @@ fn label(path: &Path) -> String {
         .into_owned()
 }
 
-fn open(editor: &mut Editor, path: &Path) {
-    if let Err(err) = editor.open(path, Action::Replace) {
+fn open(editor: &mut Editor, path: &Path, action: Action) {
+    if let Err(err) = editor.open(path, action) {
         editor.set_error(format!("unable to open {}: {}", path.display(), err));
     }
 }

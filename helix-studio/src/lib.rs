@@ -13,7 +13,7 @@ use std::sync::Mutex;
 
 use helix_event::register_hook;
 use helix_term::compositor::{Context, Event};
-use helix_term::events::PostCommand;
+use helix_term::events::{OnModeSwitch, PostCommand};
 use helix_term::ui_hooks::{self, Opened, StartupContext, UiHooks, UiRequest};
 use helix_view::events::{
     DocumentDidChange, DocumentDidClose, DocumentDidOpen, SelectionDidChange,
@@ -88,14 +88,17 @@ impl UiHooks for Studio {
     fn open(&self, request: &UiRequest, editor: &mut Editor) -> Option<Opened> {
         match request {
             UiRequest::FilePicker { .. } => Some(Opened::Layer(Box::new(overlay::centered(
-                picker::file_picker(editor, helix_stdx::env::current_working_dir()),
+                picker::file_picker(editor, workspace_root()),
             )))),
             UiRequest::FileExplorer { .. } => {
                 panel::toggle("sidebar");
                 Some(Opened::Handled)
             }
             UiRequest::StartupDirectory { root } => Some(Opened::Layer(Box::new(
-                overlay::centered(explorer::open(editor, root.clone())),
+                overlay::centered(picker::file_picker(
+                    editor,
+                    helix_loader::find_workspace_in(root).0,
+                )),
             ))),
         }
     }
@@ -126,6 +129,17 @@ fn register_stream_hooks() {
         Ok(())
     });
 
+    register_hook!(move |event: &mut OnModeSwitch<'_, '_>| {
+        panel::observe(
+            &StudioEvent::ModeChanged {
+                from: event.old_mode,
+                to: event.new_mode,
+            },
+            event.cx.editor,
+        );
+        Ok(())
+    });
+
     register_hook!(move |event: &mut DocumentDidOpen<'_>| {
         panel::observe(&StudioEvent::DocumentChanged, event.editor);
         Ok(())
@@ -150,6 +164,10 @@ fn register_stream_hooks() {
         helix_event::send_blocking(&hover, panel::hover::engine::Event::Dismiss);
         Ok(())
     });
+}
+
+pub fn workspace_root() -> PathBuf {
+    helix_loader::find_workspace().0
 }
 
 pub fn install() {

@@ -168,9 +168,20 @@ in its `when` list holds. Prefix any token with `!` to negate it.
 Ranking is `weight * 4`, plus `GROUP_BONUS` when a group's `after` list matches a
 recent command, plus `EDGE_BONUS` for an entry's own `after`, both decayed by how
 far back the match was, plus a learned bigram count, minus `REPEAT_PENALTY` for
-the command that just ran. `GROUP_BONUS` equals `EDGE_BONUS` deliberately: the
-group you just engaged with must be able to outrank a group that is merely gated
-on ambient state, or searching would bury `n` under the selection groups.
+the command that just ran.
+
+**The two bonuses are deliberately different sizes.** `GROUP_BONUS` (96) is a
+full weight range, because *which group* you see should follow context hard — the
+group you just engaged with must outrank a group gated only on ambient state, or
+searching buries `n` under the selection groups. `EDGE_BONUS` (40) is a quarter of
+that, because *order within* a group must stay dominated by frequency. When both
+were 96, one stale edge could invert a whole group: `U redo` (weight 13) overtook
+`i insert` (weight 24) six keystrokes after an undo, and the panel read as
+arbitrary. A test pins that pair.
+
+Normal-mode group bases encode the teaching order — selection first, then
+editing, then movement: `object` 15, `edit` 14, `nav` 13, `search` 11,
+`files` 10. A test pins the first three.
 
 **Every entry carries an explicit `weight`**, and a test enforces it. Without one
 an entry inherits the group base, every entry in the group ties, and the sort
@@ -191,7 +202,7 @@ same kind, not across unrelated groups.
 
 | Field | Values | Meaning |
 | --- | --- | --- |
-| `anchor` | `viewport` `editor` `cursor` `status` | The rect the panel is placed against |
+| `anchor` | `viewport` `editor` `cursor` `status` `free` | The rect the panel is placed against |
 | `side` | `top` `bottom` `left` `right` `over` | Which edge of the anchor it hugs, inside it |
 | `align` | `start` `center` `end` | Position along the cross axis |
 | `width` / `height` | `fit` `fill` `40` `25%` | `fit` asks the `Source` for its natural size |
@@ -369,24 +380,83 @@ spans lines, `C` cursor-below only when it is linewise. Gates support `!` for
 negation, which is what makes those complements expressible in config.
 
 **Grid layout.** `rows` allots a maximum height and `pack` fills it greedily.
-Keys and their labels are one unbreakable unit, so a wrap never orphans a label
-from its binding. With `grid = true` every key/label pair is padded to a common
-width, so items line up in columns across rows. `height = "fit"` then asks the
-source how many rows it actually needs, and the panel shrinks back to one row
-when the content fits.
+A `Cell` is one unbreakable unit, so a wrap never orphans a label from its
+binding — **and a section chip is part of its first item's cell**, so a chip can
+never wrap onto a row with none of its items, which is what stranded a lone
+`Select` chip at the end of row one. With `grid = true` every pair is padded to a
+common width so items line up in columns; that costs a lot of horizontal room, so
+the shipped default is `false`.
 
-**The reserved area.** A group marked `pinned = true` never enters the ranking;
-it is rendered right-aligned on the panel's last row, and `pack` is told to keep
-that many columns free on that row. So the escape hatches — `␣a` code actions,
-`␣?` the command palette, `m` text objects — hold a fixed spot no matter what the
-prediction is doing. A pending prefix menu hides them too, so the takeover stays
+**The reserved area, and why `fit` exists.** A group marked `pinned = true` never
+enters the ranking; it is rendered right-aligned on the panel's last row, and
+`pack` keeps that many columns free on that row. The escape hatches — `␣a` code
+actions, `␣?` the command palette — hold a fixed spot no matter what the
+prediction is doing. A pending prefix menu hides them, so the takeover stays
 clean.
+
+`pack` reserves those columns on row `rows - 1`, but the pinned block is painted
+on the last row that actually has content. When content fills fewer rows than the
+budget those are different rows, and the pinned block paints straight over the
+predictions. `fit` closes that: it packs, and if the result used fewer rows than
+budgeted it re-packs with the smaller budget until the two agree. That is also
+what stops the panel reserving a row it cannot fill.
 
 **A panel's hit-test rect is its inner rect.** `Panel` stores the area *after*
 the border and padding are removed, because that is the rect the `Source` painted
 into. Storing the outer rect makes every mouse coordinate off by the border
 width, which is why the sidebar's Explorer/Changes tabs did not respond to
 clicks.
+
+**The registry is never borrowed while a `Source` runs.** `render`, `observe`,
+`handle_input` and `toggle` all go through `with_panels`, which moves the panel
+list *out* of the `RefCell`, runs the closure, then moves it back. Holding the
+borrow across a call into a `Source` deadlocks the moment that source touches the
+editor: the sidebar calling `editor.open` dispatches `DocumentDidOpen`, which
+lands back in studio's own hook calling `panel::observe`, which borrows the same
+`RefCell` again and panics. A re-entrant `with_panels` sees a `busy` flag and
+returns `T::default()` instead, so the nested event is dropped rather than
+crashing — safe because a source that reaches into the editor already knows what
+it just did. Two tests pin this.
+
+**`anchor = "free"` is what stops panels stacking on each other.** `render` walks
+panels in `order` carrying a `free` rect that starts as the editor area; after
+each panel resolves, `Side::consume` cuts its rect out of `free`. A panel
+anchored `free` is therefore placed against whatever earlier panels left. The
+sidebar uses it, so its full-height column stops above the tips row instead of
+painting over it. `side = "over"` claims nothing, so overlays never shrink it.
+
+**The sidebar claims its own keys and lets the rest through.** `j`/`k`/arrows
+move, `C-d`/`C-u` page, `g`/`G` jump to ends, `h`/`Left` collapse to the parent,
+`Enter`/`l`/`Right` open or expand, `C-v`/`C-s` open in a vertical or horizontal
+split, `Tab` cycles Explorer/Changes, `Esc` closes. Everything else falls through
+to Helix. A blanket swallow is wrong here: studio's `input` hook runs *before* the
+keymap, so eating every key also eats the `space` of `space e` and the panel can
+no longer be toggled off. That is also why the toggle itself cannot be a chord
+matched in `handle_input`; `space e` goes through the `open` hook returning
+`Opened::Handled`.
+
+`handle_input` calls `ensure` before dispatching, because the tree is built during
+`render` and a key can arrive before the panel's first frame — which left the
+cursor on row 0 and made `Enter` expand a directory instead of opening the file.
+
+**`Source::dismissed` closes a panel from inside.** Opening a file sets a
+`closing` flag that `Panel` reads right after `handle_input`, so the explorer gets
+out of the way the moment you reach the file you were looking for. The source
+never touches its own `active` flag.
+
+**A modal panel reuses the pending-prefix takeover.** When a `dismissable` panel
+is active its id becomes the recommender's `pending` signal, ahead of
+`editor.autoinfo`. So `pending:sidebar` gates an `Explorer` group exactly the way
+`pending:goto` gates the goto menu: the prediction rows and the pinned area are
+both replaced while the sidebar has the keyboard, because `␣a` and `miw` do not
+work there. No new mechanism, one extra line in `signals()`.
+
+**One workspace root, `crate::workspace_root()`.** The file picker, the startup
+directory picker and the sidebar all resolve their root through
+`helix_loader::find_workspace()`, which walks up to the nearest `.git`/`.svn`/
+`.jj`/`.helix`. Deriving it from `current_working_dir()` per call site meant
+opening `hx src/foo.rs` rooted the picker at `src/`, not at the project. Startup
+on a directory opens the same fuzzy picker as `space f`, not the tree.
 
 **Tab hover feeds the recommender.** `chrome` reports its hovered tab through
 `StudioEvent::Hover`, which flips the `focus:tab` gate and makes the panel show
@@ -489,23 +559,30 @@ panel system, so new panels cost zero upstream changes.
 
 ## Tests
 
-`cargo test -p helix-studio` — 86 tests:
+`cargo test -p helix-studio` — 98 tests:
 
 - config merge layers, for both the editor config and the panel config
 - tree splice, drain, and reveal invariants, including the exact depth sequence
   after a nested expand, which row counts alone would not catch
-- placement geometry: every extent spelling, offset clamping, cross-axis align
+- placement geometry: every extent spelling, offset clamping, cross-axis align,
+  and `Side::consume` leaving the right rect free for the next panel
 - recommender ranking: gating, mode swaps, recency decay, learned edges, the
   repeat penalty, and a broken catalog degrading to empty instead of panicking
-- pending-prefix takeover, per-prefix mapping, and the unrecognised-popup fallback
+- pending-prefix takeover, per-prefix mapping, the unrecognised-popup fallback,
+  and the sidebar taking the panel over the same way a prefix menu does
 - the selection state machine, including negated gates
-- row packing: wrapping, the row budget, and keys never orphaned from labels
+- row packing: wrapping, the row budget, keys never orphaned from labels, a
+  section chip never orphaned from its items, and `fit` refusing to reserve a row
+  it cannot fill or to paint the pinned block over the predictions
+- registry re-entrancy: a nested `with_panels` returns a default rather than
+  panicking, and the panel list survives the nesting intact
 - diff hunk pairing: insertions, deletions, uneven hunks, gap elision
 - the catalog-versus-keymap consistency guard
 
 Not covered by unit tests, because they need a live terminal: panel painting,
 prefix-menu sync, session round-trip, and the explorer's expand/collapse rebuild.
-Those run under a pty harness of 22 scenarios that resizes the terminal to force
+Those run under a pty harness of 30 scenarios that resizes the terminal to force
 a full repaint, then greps the reconstructed screen. Without the resize,
 `helix-tui` only rewrites changed cells, so strings split across frames and the
-grep produces false misses.
+grep produces false misses. The harness also asserts on `panicked at` anywhere in
+the raw stream, which is how the sidebar re-entrancy crash is kept out.

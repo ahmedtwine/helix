@@ -5,7 +5,21 @@ pinned = true
 entries = [
   { keys = "␣a", label = "code actions", weight = 24, cmd = "code_action" },
   { keys = "␣?", label = "all commands", weight = 22, cmd = "command_palette" },
-  { keys = "m", label = "select around", weight = 20, cmd = "" },
+]
+
+[[group]]
+id = "explorer"
+label = "Explorer"
+base = 60
+when = ["pending:sidebar"]
+entries = [
+  { keys = "Enter", label = "open file", cmd = "" },
+  { keys = "C-v", label = "open in vertical split", cmd = "" },
+  { keys = "C-s", label = "open in horizontal split", cmd = "" },
+  { keys = "j / k", label = "move", cmd = "" },
+  { keys = "Tab", label = "explorer / changes", cmd = "" },
+  { keys = "Esc", label = "back to editor", cmd = "" },
+  { keys = "l / h", label = "expand / collapse", cmd = "" },
 ]
 
 [[group]]
@@ -18,6 +32,10 @@ entries = [
   { keys = "r", label = "references", cmd = "goto_reference" },
   { keys = "g", label = "file start", cmd = "goto_file_start" },
   { keys = "e", label = "file end", cmd = "goto_last_line" },
+  { keys = "s", label = "first non-blank", cmd = "goto_first_nonwhitespace" },
+  { keys = "y", label = "type definition", cmd = "goto_type_definition" },
+  { keys = "i", label = "implementation", cmd = "goto_implementation" },
+  { keys = ".", label = "last edit", cmd = "goto_last_modification" },
   { keys = "h", label = "line start", cmd = "goto_line_start" },
   { keys = "l", label = "line end", cmd = "goto_line_end" },
   { keys = "n", label = "next buffer", cmd = "goto_next_buffer" },
@@ -52,11 +70,14 @@ entries = [
   { keys = "iw", label = "inside word", cmd = "select_textobject_inner" },
   { keys = "if", label = "inside function", cmd = "select_textobject_inner" },
   { keys = "i(", label = "inside brackets", cmd = "select_textobject_inner" },
-  { keys = "i{", label = "inside block", cmd = "select_textobject_inner" },
   { keys = "i\"", label = "inside quotes", cmd = "select_textobject_inner" },
+  { keys = "s", label = "surround with", cmd = "surround_add" },
+  { keys = "d", label = "remove surround", cmd = "surround_delete" },
+  { keys = "r", label = "replace surround", cmd = "surround_replace" },
+  { keys = "m", label = "matching bracket", cmd = "match_brackets" },
+  { keys = "i{", label = "inside block", cmd = "select_textobject_inner" },
   { keys = "ap", label = "around paragraph", cmd = "select_textobject_around" },
   { keys = "ac", label = "around class", cmd = "select_textobject_around" },
-  { keys = "m", label = "matching bracket", cmd = "match_brackets" },
 ]
 
 [[group]]
@@ -83,6 +104,8 @@ entries = [
   { keys = "z", label = "centre cursor", cmd = "align_view_center" },
   { keys = "t", label = "cursor to top", cmd = "align_view_top" },
   { keys = "b", label = "cursor to bottom", cmd = "align_view_bottom" },
+  { keys = "d", label = "half page down", cmd = "page_cursor_half_down" },
+  { keys = "u", label = "half page up", cmd = "page_cursor_half_up" },
   { keys = "j", label = "scroll down", cmd = "scroll_down" },
   { keys = "k", label = "scroll up", cmd = "scroll_up" },
 ]
@@ -121,8 +144,10 @@ when = ["insert"]
 entries = [
   { keys = "Esc", label = "back to normal", weight = 24, cmd = "normal_mode" },
   { keys = "C-w", label = "delete word back", weight = 20, cmd = "delete_word_backward" },
+  { keys = "C-x", label = "completion", weight = 18, cmd = "completion" },
   { keys = "C-u", label = "delete to line start", weight = 16, cmd = "kill_to_line_start" },
-  { keys = "C-x", label = "completion", weight = 14, cmd = "completion" },
+  { keys = "C-k", label = "delete to line end", weight = 14, cmd = "kill_to_line_end" },
+  { keys = "C-r", label = "insert register", weight = 12, cmd = "insert_register" },
 ]
 
 [[group]]
@@ -191,7 +216,7 @@ entries = [
 [[group]]
 id = "search"
 label = "Search"
-base = 12
+base = 11
 when = ["normal"]
 after = ["search", "search_next", "search_prev", "search_selection", "select_regex"]
 entries = [
@@ -233,7 +258,7 @@ entries = [
 [[group]]
 id = "edit"
 label = "Edit"
-base = 10
+base = 14
 when = ["normal"]
 after = ["delete_selection", "change_selection", "paste_after", "paste_before", "open_below", "open_above"]
 entries = [
@@ -257,18 +282,27 @@ entries = [
 ]
 
 [[group]]
-id = "move"
-label = "Move"
-base = 10
+id = "nav"
+label = "Navigate"
+base = 13
 when = ["normal"]
+after = ["page_cursor_half_down", "page_cursor_half_up", "page_down", "page_up", "goto_file_start", "goto_last_line", "jump_backward", "jump_forward", "find_next_char", "goto_definition", "goto_reference"]
 entries = [
-  { keys = "w", label = "next word", weight = 24, cmd = "move_next_word_start" },
-  { keys = "b", label = "prev word", weight = 22, cmd = "move_prev_word_start" },
-  { keys = "e", label = "word end", weight = 20, cmd = "move_next_word_end" },
-  { keys = "v", label = "keep selecting", weight = 18, cmd = "select_mode" },
+  { keys = "C-d", label = "half page down", weight = 24, cmd = "page_cursor_half_down", repeat = true },
+  { keys = "C-u", label = "half page up", weight = 23, cmd = "page_cursor_half_up", repeat = true },
+  { keys = "C-o", label = "jump back", weight = 22, cmd = "jump_backward", repeat = true, after = ["goto_definition", "goto_reference", "goto_implementation", "goto_file_start", "goto_last_line"] },
+  { keys = "f", label = "find char", weight = 21, cmd = "find_next_char" },
+  { keys = "gg", label = "file start", weight = 20, cmd = "goto_file_start" },
+  { keys = "ge", label = "file end", weight = 19, cmd = "goto_last_line" },
+  { keys = "C-i", label = "jump forward", weight = 18, cmd = "jump_forward", repeat = true, after = ["jump_backward"] },
+  { keys = "A-.", label = "repeat find", weight = 17, cmd = "repeat_last_motion", repeat = true, after = ["find_next_char", "find_till_char"] },
   { keys = "gh", label = "line start", weight = 16, cmd = "goto_line_start" },
-  { keys = "gl", label = "line end", weight = 14, cmd = "goto_line_end" },
+  { keys = "gl", label = "line end", weight = 15, cmd = "goto_line_end" },
+  { keys = "zz", label = "centre view", weight = 14, cmd = "align_view_center" },
+  { keys = "e", label = "word end", weight = 13, cmd = "move_next_word_end", repeat = true },
   { keys = "mm", label = "match bracket", weight = 12, cmd = "match_brackets" },
+  { keys = "C-f", label = "page down", weight = 11, cmd = "page_down", repeat = true },
+  { keys = "C-b", label = "page up", weight = 10, cmd = "page_up", repeat = true },
 ]
 
 [[group]]
@@ -294,7 +328,7 @@ entries = [
 [[group]]
 id = "files"
 label = "Files"
-base = 11
+base = 10
 when = ["normal"]
 after = ["file_explorer", "buffer_picker", "global_search", "last_picker"]
 entries = [

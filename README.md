@@ -16,6 +16,12 @@
 
 </div>
 
+> **This is a fork of [helix-editor/helix](https://github.com/helix-editor/helix).**
+> It is not affiliated with or endorsed by the upstream project. The additions
+> live in the [`helix-studio`](helix-studio/README.md) crate, which builds the
+> `hx` binary here; the unmodified upstream binary is built as `hx-vanilla`.
+> Licence is unchanged — Mozilla Public License 2.0. See [`NOTICE.md`](NOTICE.md).
+
 ![Screenshot](./screenshot.png)
 
 A [Kakoune](https://github.com/mawww/kakoune) / [Neovim](https://github.com/neovim/neovim) inspired editor, written in Rust.
